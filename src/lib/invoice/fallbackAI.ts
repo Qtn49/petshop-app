@@ -43,13 +43,16 @@ async function chatCompletion(
   if (!content) throw new Error('No content in AI response');
 
   const parsed = JSON.parse(content) as { items?: unknown[]; [k: string]: unknown };
-  const rawItems = Array.isArray(parsed.items) ? parsed.items : Array.isArray(parsed) ? parsed : [];
+  const rawItems: unknown[] = Array.isArray(parsed.items) ? parsed.items : Array.isArray(parsed) ? parsed : [];
 
-  const items: ParsedInvoiceItem[] = rawItems.map((i: Record<string, unknown>) => ({
-    name: String(i.name ?? i.product_name ?? 'Unknown').trim() || 'Unknown',
-    quantity: Math.max(1, Number(i.quantity) || 1),
-    price: Number(i.price) || 0,
-  }));
+  const items: ParsedInvoiceItem[] = rawItems.map((i) => {
+    const item = i as Record<string, unknown>;
+    return {
+      name: String(item.name ?? item.product_name ?? 'Unknown').trim() || 'Unknown',
+      quantity: Math.max(1, Number(item.quantity) || 1),
+      price: Number(item.price) || 0,
+    };
+  });
 
   return { items };
 }
