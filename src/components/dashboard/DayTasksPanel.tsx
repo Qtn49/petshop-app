@@ -19,6 +19,14 @@ const FREQUENCY_OPTIONS = [
   { value: 'monthly', label: 'Monthly' },
 ] as const;
 
+const DEFAULT_TASKS: DayTask[] = [
+  { id: '1', title: 'Morning tank check', completed: true, notes: null, frequency: 'daily' },
+  { id: '2', title: 'Feed display fish', completed: false, notes: null, frequency: 'daily' },
+  { id: '3', title: 'Test water parameters', completed: false, notes: null, frequency: 'weekly' },
+  { id: '4', title: 'Restock fish food shelf', completed: false, notes: null, frequency: 'once' },
+  { id: '5', title: 'Clean quarantine tank', completed: false, notes: null, frequency: 'monthly' },
+];
+
 export default function DayTasksPanel({
   date,
   userId,
@@ -33,24 +41,16 @@ export default function DayTasksPanel({
 
   const dateStr = format(date, 'yyyy-MM-dd');
 
-  const mockTasks: DayTask[] = [
-    { id: '1', title: 'Morning tank check', completed: true, notes: null, frequency: 'daily' },
-    { id: '2', title: 'Feed display fish', completed: false, notes: null, frequency: 'daily' },
-    { id: '3', title: 'Test water parameters', completed: false, notes: null, frequency: 'weekly' },
-    { id: '4', title: 'Restock fish food shelf', completed: false, notes: null, frequency: 'once' },
-    { id: '5', title: 'Clean quarantine tank', completed: false, notes: null, frequency: 'monthly' },
-  ];
-
   useEffect(() => {
     if (!userId) {
-      setTasks(mockTasks);
+      setTasks(DEFAULT_TASKS);
       setLoading(false);
       return;
     }
     fetch(`/api/day-tasks?userId=${userId}&date=${dateStr}`)
       .then((r) => r.json())
-      .then((d) => setTasks(d.tasks?.length ? d.tasks : mockTasks))
-      .catch(() => setTasks(mockTasks))
+      .then((d) => setTasks(d.tasks?.length ? d.tasks : DEFAULT_TASKS))
+      .catch(() => setTasks(DEFAULT_TASKS))
       .finally(() => setLoading(false));
   }, [userId, dateStr]);
 

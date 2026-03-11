@@ -77,7 +77,7 @@ export async function POST(request: Request) {
         });
 
         const catalogId = result.catalogObject?.id ?? result.idMappings?.[0]?.objectId;
-        created.push({ name, id: catalogId });
+        created.push({ name, id: catalogId ?? undefined });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         const statusCode = typeof (err as { statusCode?: number }).statusCode === 'number' ? (err as { statusCode: number }).statusCode : null;

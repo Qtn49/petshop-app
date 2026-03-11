@@ -14,27 +14,27 @@ type Tank = {
   notes: string | null;
 };
 
+const DEFAULT_TANKS: Tank[] = [
+  { id: '1', name: 'Display Tank 1', fish_species: 'Neon Tetra', fish_count: 12, notes: 'Main store display' },
+  { id: '2', name: 'Display Tank 2', fish_species: 'Guppy', fish_count: 8, notes: 'Breeding pair' },
+  { id: '3', name: 'Reptile Section', fish_species: null, fish_count: 0, notes: 'Holds reptiles, not fish' },
+  { id: '4', name: 'Quarantine Tank', fish_species: 'Mixed', fish_count: 5, notes: 'New arrivals' },
+  { id: '5', name: 'Cichlid Tank', fish_species: 'African Cichlid', fish_count: 6, notes: 'pH 8.0' },
+];
+
 export default function AquariumsPage() {
   const { user } = useAuth();
   const [tanks, setTanks] = useState<Tank[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const mockTanks: Tank[] = [
-    { id: '1', name: 'Display Tank 1', fish_species: 'Neon Tetra', fish_count: 12, notes: 'Main store display' },
-    { id: '2', name: 'Display Tank 2', fish_species: 'Guppy', fish_count: 8, notes: 'Breeding pair' },
-    { id: '3', name: 'Reptile Section', fish_species: null, fish_count: 0, notes: 'Holds reptiles, not fish' },
-    { id: '4', name: 'Quarantine Tank', fish_species: 'Mixed', fish_count: 5, notes: 'New arrivals' },
-    { id: '5', name: 'Cichlid Tank', fish_species: 'African Cichlid', fish_count: 6, notes: 'pH 8.0' },
-  ];
 
   useEffect(() => {
     if (!user?.id) return;
     fetch(`/api/tanks?userId=${user.id}`)
       .then((r) => r.json())
       .then((d) => {
-        setTanks(d.tanks?.length ? d.tanks : mockTanks);
+        setTanks(d.tanks?.length ? d.tanks : DEFAULT_TANKS);
       })
-      .catch(() => setTanks(mockTanks))
+      .catch(() => setTanks(DEFAULT_TANKS))
       .finally(() => setLoading(false));
   }, [user?.id]);
 
