@@ -6,7 +6,7 @@ export type ValidationResult =
 
 /**
  * Validates parsed invoice items.
- * Rules: non-empty array, quantity > 0, price valid number, name at least 2 characters.
+ * Rules: at least 2 items, name >= 5 chars, quantity in 1..200, price > 0.
  */
 export function validateItems(items: ParsedInvoiceItem[]): ValidationResult {
   const errors: string[] = [];
@@ -15,22 +15,26 @@ export function validateItems(items: ParsedInvoiceItem[]): ValidationResult {
     return { valid: false, errors: ['Items array must not be empty'] };
   }
 
+  if (items.length < 2) {
+    return { valid: false, errors: ['At least 2 items required to consider parsing successful'] };
+  }
+
   items.forEach((item, index) => {
     const prefix = `Item ${index + 1}:`;
 
     const name = typeof item.name === 'string' ? item.name.trim() : '';
-    if (name.length < 2) {
-      errors.push(`${prefix} name must be at least 2 characters`);
+    if (name.length < 5) {
+      errors.push(`${prefix} name must be at least 5 characters`);
     }
 
     const qty = Number(item.quantity);
-    if (Number.isNaN(qty) || qty <= 0) {
-      errors.push(`${prefix} quantity must be a number greater than 0`);
+    if (Number.isNaN(qty) || qty <= 0 || qty > 200) {
+      errors.push(`${prefix} quantity must be between 1 and 200`);
     }
 
     const price = Number(item.price);
-    if (Number.isNaN(price) || price < 0) {
-      errors.push(`${prefix} price must be a valid non-negative number`);
+    if (Number.isNaN(price) || price <= 0) {
+      errors.push(`${prefix} price must be greater than 0`);
     }
   });
 

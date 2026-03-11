@@ -2,6 +2,7 @@
  * Single line item parsed from an invoice.
  */
 export type ParsedInvoiceItem = {
+  code?: string;
   name: string;
   quantity: number;
   price: number;

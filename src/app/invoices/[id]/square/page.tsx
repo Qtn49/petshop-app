@@ -28,6 +28,7 @@ type MatchedItem = {
   catalogVariationId?: string;
   catalogName?: string;
   status: 'matched' | 'unmatched';
+  selected: boolean;
 };
 
 export default function InvoiceSquarePage() {
@@ -40,6 +41,7 @@ export default function InvoiceSquarePage() {
   const [creating, setCreating] = useState(false);
   const [squareConnected, setSquareConnected] = useState(false);
   const [error, setError] = useState('');
+  const [reconnectHint, setReconnectHint] = useState<string | null>(null);
 
   const invoiceId = params.id as string;
 
@@ -70,15 +72,17 @@ export default function InvoiceSquarePage() {
               item.product_name.toLowerCase().includes(c.name?.toLowerCase() || '')
           );
           const variation = match?.variations?.[0];
+          const catalogName = match?.name ?? undefined;
           return {
             ...item,
+            product_name: catalogName ? catalogName : item.product_name,
             catalogItemId: match?.id,
             catalogVariationId: variation?.id,
-            catalogName: match?.name,
+            catalogName,
             status: match ? 'matched' : 'unmatched',
+            selected: true,
           } as MatchedItem;
         });
-
         setItems(matched);
         setCatalog(catalogItems);
       } catch (err) {
@@ -91,40 +95,72 @@ export default function InvoiceSquarePage() {
     fetchData();
   }, [invoiceId, user?.id]);
 
-  const handleCreatePO = async () => {
+  const toggleSelected = (index: number) => {
+    setItems((prev) => {
+      const next = [...prev];
+      if (next[index]) next[index] = { ...next[index], selected: !next[index].selected };
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    setItems((prev) => prev.map((i) => ({ ...i, selected: true })));
+  };
+
+  const deselectAll = () => {
+    setItems((prev) => prev.map((i) => ({ ...i, selected: false })));
+  };
+
+  const handleAddToSquare = async () => {
     if (!user?.id) return;
 
-    const toOrder = items.filter((i) => i.catalogVariationId || i.catalogItemId);
-    if (toOrder.length === 0) {
-      setError('No matched items to order. Connect Square and ensure products exist in your catalog.');
+    const selectedItems = items.filter((i) => i.selected);
+    const toCreate = selectedItems.filter((i) => i.status === 'unmatched');
+
+    if (toCreate.length === 0) {
+      const allMatched = selectedItems.length > 0 && selectedItems.every((i) => i.status === 'matched');
+      if (allMatched) {
+        setError('All selected items are already in your Square catalog. No new items to add.');
+      } else {
+        setError('Select at least one item that is not yet in Square to add.');
+      }
       return;
     }
 
     setCreating(true);
     setError('');
+    setReconnectHint(null);
 
     try {
-      const res = await fetch('/api/square/purchase-order', {
+      const res = await fetch('/api/square/catalog/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          lineItems: toOrder.map((i) => ({
-            catalogItemId: i.catalogItemId,
-            catalogVariationId: i.catalogVariationId,
+          items: toCreate.map((i) => ({
+            product_name: i.product_name,
             quantity: i.quantity,
-            name: i.product_name,
+            price: i.price,
           })),
         }),
       });
 
       const data = await res.json();
 
-      if (!res.ok) throw new Error(data.error || 'Failed to create PO');
+      if (!res.ok) throw new Error(data.error || 'Failed to add items to Square');
 
-      router.push(`/invoices/${invoiceId}?po_created=1`);
+      if (data.hint) {
+        setReconnectHint(data.hint);
+      }
+      if (data.errors?.length) {
+        setError(`Added ${data.created?.length ?? 0} item(s). Some failed: ${data.errors.map((e: { name: string; error: string }) => `${e.name}: ${e.error}`).join('; ')}`);
+      }
+      if (data.created?.length && !data.errors?.length) {
+        setError('');
+        router.push(`/invoices/${invoiceId}?square_added=1`);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create PO');
+      setError(err instanceof Error ? err.message : 'Failed to add to Square');
     } finally {
       setCreating(false);
     }
@@ -178,23 +214,71 @@ export default function InvoiceSquarePage() {
         </Card>
       )}
 
-      <Card title="Items to Order">
+      <Card title="Items — Add to Square">
+        {reconnectHint && (
+          <div className="mb-4 p-4 rounded-lg bg-amber-50 border border-amber-200">
+            <p className="text-amber-800 font-medium">{reconnectHint}</p>
+            <a href="/settings" className="inline-flex items-center gap-2 mt-2 text-primary-600 font-medium hover:underline">
+              <Link2 className="w-4 h-4" />
+              Open Settings to reconnect Square
+            </a>
+          </div>
+        )}
         {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+        <p className="text-slate-600 text-sm mb-4">
+          Check the items you want to add to Square. Only items not already in your catalog will be created. Purchase order is not created.
+        </p>
+
+        <div className="flex gap-2 mb-3">
+          <Button variant="secondary" size="sm" onClick={selectAll} disabled={items.length === 0}>
+            Select all
+          </Button>
+          <Button variant="secondary" size="sm" onClick={deselectAll} disabled={items.length === 0}>
+            Deselect all
+          </Button>
+        </div>
 
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-200">
+                <th className="w-10 py-2 text-sm font-medium text-slate-600 text-center">Add</th>
                 <th className="text-left py-2 text-sm font-medium text-slate-600">Product</th>
                 <th className="text-left py-2 text-sm font-medium text-slate-600">Qty</th>
+                <th className="text-left py-2 text-sm font-medium text-slate-600">Price</th>
                 <th className="text-left py-2 text-sm font-medium text-slate-600">Match</th>
               </tr>
             </thead>
             <tbody>
               {items.map((item, i) => (
-                <tr key={i} className="border-b border-slate-100">
+                <tr
+                  key={i}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => toggleSelected(i)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      toggleSelected(i);
+                    }
+                  }}
+                  className="border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors"
+                >
+                  <td className="py-3 text-center">
+                    <input
+                      type="checkbox"
+                      checked={item.selected}
+                      readOnly
+                      tabIndex={-1}
+                      className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500 pointer-events-none"
+                      title={item.status === 'matched' ? 'Already in Square' : 'Add to Square'}
+                    />
+                  </td>
                   <td className="py-3 text-slate-800">{item.product_name}</td>
                   <td className="py-3 text-slate-800">{item.quantity}</td>
+                  <td className="py-3 text-slate-800">
+                    {item.price != null ? `$${Number(item.price).toFixed(2)}` : '-'}
+                  </td>
                   <td className="py-3">
                     <span
                       className={`text-xs px-2 py-1 rounded ${
@@ -217,18 +301,18 @@ export default function InvoiceSquarePage() {
             Back
           </Button>
           <Button
-            onClick={handleCreatePO}
-            disabled={creating || items.filter((i) => i.status === 'matched').length === 0}
+            onClick={handleAddToSquare}
+            disabled={creating || items.filter((i) => i.selected && i.status === 'unmatched').length === 0}
           >
             {creating ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Creating...
+                Adding...
               </>
             ) : (
               <>
                 <Check className="w-4 h-4 mr-2" />
-                Create Purchase Order
+                Add selected to Square
               </>
             )}
           </Button>

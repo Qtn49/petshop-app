@@ -1,22 +1,51 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import Card from '@/components/ui/Card';
-import { FileText } from 'lucide-react';
+import Button from '@/components/ui/Button';
+import { FileText, Trash2, Loader2 } from 'lucide-react';
+
+type InvoiceRow = { id: string; file_name: string; status: string; created_at: string };
 
 export default function InvoicesListPage() {
   const { user } = useAuth();
-  const [invoices, setInvoices] = useState<{ id: string; file_name: string; status: string; created_at: string }[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchInvoices = useCallback(() => {
     if (!user?.id) return;
     fetch(`/api/invoices?userId=${user.id}`)
       .then((r) => r.json())
       .then((d) => setInvoices(d.invoices || []))
       .catch(() => setInvoices([]));
   }, [user?.id]);
+
+  useEffect(() => {
+    fetchInvoices();
+  }, [fetchInvoices]);
+
+  const handleRemove = async (inv: InvoiceRow) => {
+    if (!user?.id) return;
+    if (deletingId) return;
+    if (!confirm(`Remove "${inv.file_name}"? This cannot be undone.`)) return;
+    setError(null);
+    setDeletingId(inv.id);
+    try {
+      const res = await fetch(`/api/invoices/${inv.id}?userId=${encodeURIComponent(user.id)}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to remove invoice');
+      }
+      setInvoices((prev) => prev.filter((i) => i.id !== inv.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to remove invoice');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -31,21 +60,42 @@ export default function InvoicesListPage() {
         </Link>
       </div>
 
+      {error && (
+        <div className="p-3 rounded-lg bg-red-50 text-red-800 text-sm">{error}</div>
+      )}
+
       <Card title="Invoice List">
         {invoices.length === 0 ? (
           <p className="text-slate-500">No invoices yet.</p>
         ) : (
           <ul className="space-y-2">
             {invoices.map((inv) => (
-              <li key={inv.id}>
-                <Link
-                  href={`/invoices/${inv.id}`}
-                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50"
-                >
-                  <FileText className="w-5 h-5 text-slate-400" />
-                  <span className="flex-1 font-medium">{inv.file_name}</span>
-                  <span className="text-sm text-slate-500">{inv.status}</span>
+              <li
+                key={inv.id}
+                className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 group"
+              >
+                <Link href={`/invoices/${inv.id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                  <FileText className="w-5 h-5 text-slate-400 shrink-0" />
+                  <span className="font-medium truncate">{inv.file_name}</span>
+                  <span className="text-sm text-slate-500 shrink-0">{inv.status}</span>
                 </Link>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleRemove(inv);
+                  }}
+                  disabled={deletingId !== null}
+                  className="shrink-0 text-slate-400 hover:text-red-600"
+                  title="Remove invoice"
+                >
+                  {deletingId === inv.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                </Button>
               </li>
             ))}
           </ul>

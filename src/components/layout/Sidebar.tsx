@@ -29,7 +29,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`h-screen flex flex-col bg-white border-r border-slate-200 flex-shrink-0 transition-all duration-200 ${
+      className={`fixed left-0 top-0 bottom-0 z-30 flex flex-col bg-white border-r border-slate-200 transition-all duration-200 hidden lg:flex ${
         isCollapsed ? 'w-[72px]' : 'w-64'
       }`}
     >

@@ -1,11 +1,11 @@
 import type { ParsedInvoiceResult } from './types';
-import { regexParser } from './regexParser';
+import { regexParser, getCandidateLines } from './regexParser';
 import { validateItems } from './validator';
-import { fallbackAI } from './fallbackAI';
+import { fallbackGroq } from './fallbackGroq';
 
 /**
- * Parse invoice text: try regex first, then AI fallback if validation fails.
- * Reduces API usage by parsing locally when possible.
+ * Parse invoice text: line-based regex first (candidate lines only), then Groq fallback if
+ * validation fails or fewer than 3 items. Fallback receives only candidate lines.
  */
 export async function parseInvoiceText(text: string): Promise<ParsedInvoiceResult> {
   const trimmed = text?.trim() ?? '';
@@ -15,17 +15,18 @@ export async function parseInvoiceText(text: string): Promise<ParsedInvoiceResul
 
   const result = regexParser(trimmed);
   const validation = validateItems(result.items);
+  const enoughItems = result.items.length >= 3;
 
-  if (validation.valid) {
-    console.log('Regex parsing success');
+  if (validation.valid && enoughItems) {
     return result;
   }
 
-  console.log('Regex parsing failed, using AI fallback');
-  return fallbackAI(trimmed);
+  const candidateLines = getCandidateLines(trimmed);
+  const filteredText = candidateLines.length > 0 ? candidateLines.join('\n') : trimmed;
+  return fallbackGroq(filteredText);
 }
 
 export type { ParsedInvoiceItem, ParsedInvoiceResult } from './types';
-export { regexParser } from './regexParser';
+export { regexParser, getCandidateLines } from './regexParser';
 export { validateItems } from './validator';
-export { fallbackAI } from './fallbackAI';
+export { fallbackGroq } from './fallbackGroq';

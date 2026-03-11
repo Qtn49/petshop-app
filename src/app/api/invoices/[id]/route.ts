@@ -39,3 +39,94 @@ export async function GET(
     })),
   });
 }
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const supabase = getSupabaseClient();
+  const { searchParams } = new URL(request.url);
+  const userId = searchParams.get('userId');
+
+  if (!userId) {
+    return NextResponse.json({ error: 'userId required' }, { status: 400 });
+  }
+
+  const { data: invoice, error: invError } = await supabase
+    .from('invoices')
+    .select('id')
+    .eq('id', id)
+    .eq('user_id', userId)
+    .single();
+
+  if (invError || !invoice) {
+    return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+  }
+
+  let body: { items?: Array<{ product_name: string; quantity: number; price?: number }> };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  const items = Array.isArray(body.items) ? body.items : [];
+  if (items.length === 0) {
+    return NextResponse.json({ error: 'items array required' }, { status: 400 });
+  }
+
+  await supabase.from('invoice_items').delete().eq('invoice_id', id);
+  for (const item of items) {
+    await supabase.from('invoice_items').insert({
+      invoice_id: id,
+      product_name: item.product_name ?? '',
+      quantity: Number(item.quantity) || 1,
+      price: item.price != null ? Number(item.price) : null,
+    });
+  }
+
+  return NextResponse.json({ success: true });
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const supabase = getSupabaseClient();
+  const { searchParams } = new URL(request.url);
+  const userId = searchParams.get('userId');
+
+  if (!userId) {
+    return NextResponse.json({ error: 'userId required' }, { status: 400 });
+  }
+
+  const { data: invoice, error: invError } = await supabase
+    .from('invoices')
+    .select('id, file_path')
+    .eq('id', id)
+    .eq('user_id', userId)
+    .single();
+
+  if (invError || !invoice) {
+    return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+  }
+
+  if (invoice.file_path) {
+    try {
+      await supabase.storage.from('invoices').remove([invoice.file_path]);
+    } catch {
+      // Continue to delete DB rows even if file is missing
+    }
+  }
+
+  await supabase.from('invoice_items').delete().eq('invoice_id', id);
+  const { error: deleteError } = await supabase.from('invoices').delete().eq('id', id).eq('user_id', userId);
+
+  if (deleteError) {
+    return NextResponse.json({ error: deleteError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
+}
