@@ -20,7 +20,10 @@ export default function SuppliersPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
     fetch(`/api/suppliers?userId=${user.id}`)
       .then((r) => r.json())
       .then((d) => setLinks(d.links || []))

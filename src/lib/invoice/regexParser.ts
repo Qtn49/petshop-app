@@ -84,6 +84,8 @@ export function regexParser(text: string): ParsedInvoiceResult {
     code = repaired.code;
     name = repaired.name;
 
+    console.log('Parsed line:', code, name);
+
     const item: ParsedInvoiceItem = {
       code: code || undefined,
       name,

@@ -28,7 +28,10 @@ export default function AquariumsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
     fetch(`/api/tanks?userId=${user.id}`)
       .then((r) => r.json())
       .then((d) => {

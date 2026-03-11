@@ -33,9 +33,11 @@ export async function GET(
   return NextResponse.json({
     invoice,
     items: (items || []).map((i) => ({
+      skn: i.skn ?? '',
       product_name: i.product_name,
       quantity: i.quantity,
       price: i.price,
+      calculated_price: i.calculated_price != null ? Number(i.calculated_price) : null,
     })),
   });
 }
@@ -64,7 +66,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
   }
 
-  let body: { items?: Array<{ product_name: string; quantity: number; price?: number }> };
+  let body: { items?: Array<{ skn?: string; product_name: string; quantity: number; price?: number; calculated_price?: number | null }> };
   try {
     body = await request.json();
   } catch {
@@ -80,9 +82,11 @@ export async function PATCH(
   for (const item of items) {
     await supabase.from('invoice_items').insert({
       invoice_id: id,
+      skn: (item.skn ?? '').trim() || null,
       product_name: item.product_name ?? '',
       quantity: Number(item.quantity) || 1,
       price: item.price != null ? Number(item.price) : null,
+      calculated_price: item.calculated_price != null && !Number.isNaN(Number(item.calculated_price)) ? Number(item.calculated_price) : null,
     });
   }
 

@@ -37,7 +37,10 @@ export default function TankDetailPage() {
   const id = params.id as string;
 
   useEffect(() => {
-    if (!id || !user?.id) return;
+    if (!id || !user?.id) {
+      setLoading(false);
+      return;
+    }
 
     const fetchData = async () => {
       try {

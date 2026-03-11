@@ -4,7 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { Link2, Loader2, Check } from 'lucide-react';
+import { Link2, Loader2, Check, Plus, Trash2 } from 'lucide-react';
+
+type FormulaRow = { label: string; formula_percent: string };
 
 type SquareStatus = {
   connected: boolean;
@@ -25,6 +27,10 @@ export default function SettingsPage() {
   const [squareStatus, setSquareStatus] = useState<SquareStatus | null>(null);
   const [squareLoading, setSquareLoading] = useState(true);
   const [squareDisconnecting, setSquareDisconnecting] = useState(false);
+
+  const [invoiceFormulas, setInvoiceFormulas] = useState<FormulaRow[]>([]);
+  const [invoiceFormulasLoading, setInvoiceFormulasLoading] = useState(true);
+  const [invoiceFormulasSaving, setInvoiceFormulasSaving] = useState(false);
 
   // When landing with square_connected=1, show success and connected immediately (before user/fetch)
   useEffect(() => {
@@ -80,6 +86,57 @@ export default function SettingsPage() {
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [user?.id, fetchSquareStatus]);
+
+  // Fetch invoice formulas
+  const fetchInvoiceFormulas = useCallback(async () => {
+    if (!user?.id) return;
+    setInvoiceFormulasLoading(true);
+    try {
+      const res = await fetch(`/api/settings/invoice-formulas?userId=${encodeURIComponent(user.id)}`);
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.formulas)) {
+        setInvoiceFormulas(
+          data.formulas.map((f: { label: string; formula_percent: string }) => ({
+            label: f.label ?? '',
+            formula_percent: f.formula_percent ?? '',
+          }))
+        );
+      } else {
+        setInvoiceFormulas([{ label: '100%', formula_percent: '100,10' }, { label: '35%', formula_percent: '35,10' }]);
+      }
+    } catch {
+      setInvoiceFormulas([{ label: '100%', formula_percent: '100,10' }, { label: '35%', formula_percent: '35,10' }]);
+    } finally {
+      setInvoiceFormulasLoading(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    fetchInvoiceFormulas();
+  }, [fetchInvoiceFormulas]);
+
+  const saveInvoiceFormulas = async () => {
+    if (!user?.id) return;
+    setInvoiceFormulasSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/settings/invoice-formulas', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, formulas: invoiceFormulas }),
+      });
+      if (res.ok) {
+        setMessage({ type: 'success', text: 'Invoice formulas saved.' });
+      } else {
+        const data = await res.json();
+        setMessage({ type: 'error', text: data.error ?? 'Failed to save formulas' });
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to save formulas' });
+    } finally {
+      setInvoiceFormulasSaving(false);
+    }
+  };
 
   const handleUpdateName = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -239,6 +296,83 @@ export default function SettingsPage() {
         </form>
       </Card>
 
+      <Card title="Invoices" className="border-t border-slate-100">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Calculated price formulas: label and formula in % only (e.g. <code className="bg-slate-100 px-1 rounded text-xs">100,10</code> = 100% then 10%).
+          </p>
+          {invoiceFormulasLoading ? (
+            <div className="flex items-center gap-2 text-slate-500">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Loading…</span>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                {invoiceFormulas.map((row, i) => (
+                  <div key={i} className="flex gap-2 items-center flex-wrap">
+                    <input
+                      type="text"
+                      placeholder="Label"
+                      value={row.label}
+                      onChange={(e) =>
+                        setInvoiceFormulas((prev) => {
+                          const next = [...prev];
+                          next[i] = { ...next[i], label: e.target.value };
+                          return next;
+                        })
+                      }
+                      className="flex-1 min-w-[6rem] px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Formula % (e.g. 100,10)"
+                      value={row.formula_percent}
+                      onChange={(e) =>
+                        setInvoiceFormulas((prev) => {
+                          const next = [...prev];
+                          next[i] = { ...next[i], formula_percent: e.target.value };
+                          return next;
+                        })
+                      }
+                      className="flex-1 min-w-[8rem] px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setInvoiceFormulas((prev) => prev.filter((_, j) => j !== i))}
+                      className="p-2 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
+                      title="Remove"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setInvoiceFormulas((prev) => [...prev, { label: '', formula_percent: '' }])}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add formula
+                </Button>
+                <Button type="button" onClick={saveInvoiceFormulas} disabled={invoiceFormulasSaving}>
+                  {invoiceFormulasSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving…
+                    </>
+                  ) : (
+                    'Save formulas'
+                  )}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Card>
+
       <Card title="Square Integration">
         {squareLoading ? (
           <div className="flex items-center gap-2 text-slate-500">
@@ -276,6 +410,15 @@ export default function SettingsPage() {
             <p className="text-sm text-slate-600">
               Connect your Square account to sync catalog and create purchase orders from invoices.
             </p>
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900">
+              <p className="font-medium mb-1">If you get a 400 error (Sandbox):</p>
+              <ol className="list-decimal list-inside space-y-1 text-amber-800">
+                <li>Open the <a href="https://developer.squareup.com/apps" target="_blank" rel="noopener noreferrer" className="underline">Square Developer Dashboard</a> in another tab.</li>
+                <li>Select <strong>Sandbox</strong>, open your app, and open the Sandbox seller dashboard (or log in to Sandbox).</li>
+                <li>Keep that tab open, then click &quot;Connect with Square&quot; below.</li>
+                <li>Ensure the <strong>Redirect URL</strong> in Square OAuth settings matches exactly: your callback URL with no trailing slash.</li>
+              </ol>
+            </div>
             <Button onClick={handleConnectSquare}>
               <Link2 className="w-4 h-4 mr-2" />
               Connect with Square

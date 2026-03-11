@@ -34,6 +34,8 @@ async function extractTextFromFile(
   throw new Error('Unsupported file type');
 }
 
+const sep = '─'.repeat(60);
+
 export async function POST(request: Request) {
   try {
     const supabase = getSupabaseClient();
@@ -46,6 +48,10 @@ export async function POST(request: Request) {
       );
     }
 
+    console.log('\n' + sep);
+    console.log('📥 PARSE REQUEST — invoiceId:', invoiceId, 'userId:', userId);
+    console.log(sep);
+
     const { data: invoice, error: invError } = await supabase
       .from('invoices')
       .select('*')
@@ -54,6 +60,8 @@ export async function POST(request: Request) {
       .single();
 
     if (invError || !invoice) {
+      console.log('❌ Invoice not found:', invError?.message || 'No invoice');
+      console.log(sep + '\n');
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     }
 
@@ -71,7 +79,15 @@ export async function POST(request: Request) {
       invoice.file_type
     );
 
+    console.log('\n' + sep);
+    console.log('📄 RAW TEXT EXTRACTED FROM FILE');
+    console.log(sep);
+    console.log(rawText);
+    console.log(sep + '\n');
+
     if (!rawText?.trim()) {
+      console.log('❌ Extracted text is empty — check file format / content');
+      console.log(sep + '\n');
       await supabase
         .from('invoices')
         .update({ status: 'error' })
@@ -84,9 +100,18 @@ export async function POST(request: Request) {
 
     const { items } = await parseInvoiceText(rawText);
 
+    if (items.length > 0) {
+      console.log('📋 Parsed items:', JSON.stringify(items, null, 2));
+      console.log(sep + '\n');
+    } else {
+      console.log('⚠️ No items parsed (regex and/or AI returned empty).');
+      console.log(sep + '\n');
+    }
+
     for (const item of items) {
       await supabase.from('invoice_items').insert({
         invoice_id: invoiceId,
+        skn: item.code ?? null,
         product_name: item.name,
         quantity: item.quantity,
         price: item.price,
@@ -101,6 +126,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       items: items.map((i) => ({
+        skn: i.code ?? '',
         product_name: i.name,
         quantity: i.quantity,
         price: i.price,
@@ -108,6 +134,9 @@ export async function POST(request: Request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Parsing failed';
+    console.log('❌ PARSE ERROR:', message);
+    if (err instanceof Error && err.stack) console.log(err.stack);
+    console.log(sep + '\n');
     return NextResponse.json(
       { error: message },
       { status: 500 }

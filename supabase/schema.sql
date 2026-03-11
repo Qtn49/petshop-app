@@ -55,14 +55,26 @@ CREATE TABLE invoices (
 CREATE TABLE invoice_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   invoice_id UUID REFERENCES invoices(id) ON DELETE CASCADE,
+  skn TEXT,
   product_name TEXT NOT NULL,
   quantity INTEGER NOT NULL DEFAULT 1,
   price DECIMAL(10, 2),
+  calculated_price DECIMAL(10, 2),
   square_item_id TEXT,
   square_catalog_item_id TEXT,
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'matched', 'unmatched', 'ordered')),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- User-defined invoice calculated price formulas (label + formula in % only, e.g. "100,10" = 100% then 10%)
+CREATE TABLE invoice_formula_presets (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  label TEXT NOT NULL,
+  formula_percent TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Day tasks (tasks for a specific date, shown on calendar)

@@ -18,9 +18,11 @@ export async function parseInvoiceText(text: string): Promise<ParsedInvoiceResul
   const enoughItems = result.items.length >= 3;
 
   if (validation.valid && enoughItems) {
+    console.log('Regex parsing success');
     return result;
   }
 
+  console.log('Regex parsing failed or fewer than 3 items, using Groq fallback');
   const candidateLines = getCandidateLines(trimmed);
   const filteredText = candidateLines.length > 0 ? candidateLines.join('\n') : trimmed;
   return fallbackGroq(filteredText);

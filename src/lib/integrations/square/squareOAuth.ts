@@ -18,9 +18,9 @@ export function getSquareEnvironment(): 'sandbox' | 'production' {
 }
 
 /**
- * Get the Square OAuth base URL (authorize and token) from APP_ENV.
- * APP_ENV=production → https://connect.squareup.com
- * Otherwise (development, etc.) → https://connect.squareupsandbox.com
+ * Square OAuth base URL (authorize and token).
+ * Production: https://connect.squareup.com
+ * Sandbox: https://connect.squareupsandbox.com
  */
 function getSquareOAuthBaseUrl(): string {
   const env = getSquareEnvironment();

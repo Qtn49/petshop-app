@@ -25,15 +25,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem(USER_STORAGE_KEY);
-    if (stored) {
-      try {
-        setUser(JSON.parse(stored));
-      } catch {
-        localStorage.removeItem(USER_STORAGE_KEY);
+    try {
+      const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(USER_STORAGE_KEY) : null;
+      if (stored) {
+        try {
+          setUser(JSON.parse(stored));
+        } catch {
+          localStorage.removeItem(USER_STORAGE_KEY);
+        }
       }
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, []);
 
   const login = async (pin: string): Promise<boolean> => {

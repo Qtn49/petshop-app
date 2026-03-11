@@ -46,7 +46,10 @@ export default function InvoiceSquarePage() {
   const invoiceId = params.id as string;
 
   useEffect(() => {
-    if (!invoiceId || !user?.id) return;
+    if (!invoiceId || !user?.id) {
+      setLoading(false);
+      return;
+    }
 
     const fetchData = async () => {
       try {
