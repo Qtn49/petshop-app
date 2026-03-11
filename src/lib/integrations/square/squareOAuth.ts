@@ -97,12 +97,15 @@ export async function exchangeCodeForToken(
     }),
   });
 
-  const data = (await res.json()) as { message?: string; errors?: Array<{ code?: string; detail?: string }> };
+  const data = await res.json() as
+    | SquareTokenResponse
+    | { message?: string; errors?: Array<{ code?: string; detail?: string }> };
 
   if (!res.ok) {
-    const detail = data?.errors?.[0];
+    const errData = data as { message?: string; errors?: Array<{ code?: string; detail?: string }> };
+    const detail = errData?.errors?.[0];
     const message =
-      data?.message ||
+      errData?.message ||
       detail?.detail ||
       (detail?.code ? `Square: ${detail.code}` : null) ||
       `Square OAuth error ${res.status}`;
@@ -113,11 +116,12 @@ export async function exchangeCodeForToken(
     throw new Error(message + hint);
   }
 
+  const success = data as SquareTokenResponse;
   return {
-    access_token: data.access_token,
-    refresh_token: data.refresh_token,
-    merchant_id: data.merchant_id,
-    expires_at: data.expires_at,
+    access_token: success.access_token,
+    refresh_token: success.refresh_token,
+    merchant_id: success.merchant_id,
+    expires_at: success.expires_at,
   };
 }
 
