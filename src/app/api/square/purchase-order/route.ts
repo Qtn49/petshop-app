@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase-server';
+import { getSquareEnvironment } from '@/lib/integrations/square/squareOAuth';
 import { Client, Environment } from 'square';
 
 // Note: Square's Purchase Order API may have limited availability.
@@ -31,10 +32,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const env =
-      process.env.NEXT_PUBLIC_SQUARE_ENVIRONMENT === 'production'
-        ? Environment.Production
-        : Environment.Sandbox;
+    const squareEnv = getSquareEnvironment();
+    const env = squareEnv === 'production' ? Environment.Production : Environment.Sandbox;
 
     const client = new Client({
       accessToken: conn.access_token,

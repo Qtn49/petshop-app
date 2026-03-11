@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase-server';
+import { getSquareEnvironment } from '@/lib/integrations/square/squareOAuth';
 import { Client, Environment } from 'square';
 
 export async function GET(request: Request) {
@@ -24,10 +25,8 @@ export async function GET(request: Request) {
     );
   }
 
-  const env =
-    process.env.NEXT_PUBLIC_SQUARE_ENVIRONMENT === 'production'
-      ? Environment.Production
-      : Environment.Sandbox;
+  const squareEnv = getSquareEnvironment();
+  const env = squareEnv === 'production' ? Environment.Production : Environment.Sandbox;
 
   const client = new Client({
     accessToken: conn.access_token,

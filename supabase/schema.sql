@@ -4,10 +4,19 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Storage bucket for invoices (run in Supabase Dashboard > Storage)
--- INSERT INTO storage.buckets (id, name, public) VALUES ('invoices', 'invoices', false);
--- CREATE POLICY "Allow authenticated uploads" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'invoices');
--- CREATE POLICY "Allow authenticated reads" ON storage.objects FOR SELECT USING (bucket_id = 'invoices');
+-- Storage bucket for invoices (required for invoice file uploads)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('invoices', 'invoices', false)
+ON CONFLICT (id) DO NOTHING;
+
+-- Storage policies for invoices bucket (allow uploads and reads via API)
+DROP POLICY IF EXISTS "Allow invoices upload" ON storage.objects;
+CREATE POLICY "Allow invoices upload" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'invoices');
+
+DROP POLICY IF EXISTS "Allow invoices read" ON storage.objects;
+CREATE POLICY "Allow invoices read" ON storage.objects
+  FOR SELECT USING (bucket_id = 'invoices');
 
 -- Users table (extends Supabase auth or stores PIN users)
 CREATE TABLE users (
@@ -114,14 +123,27 @@ CREATE TABLE notifications (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Square OAuth tokens (store encrypted)
+-- Square OAuth state (CSRF protection; temporary, expire after use)
+CREATE TABLE square_oauth_states (
+  state TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_square_oauth_states_expires ON square_oauth_states(expires_at);
+
+-- Square OAuth tokens (store securely; use RLS in production)
 CREATE TABLE square_connections (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES users(id) ON DELETE CASCADE UNIQUE,
   access_token TEXT,
   refresh_token TEXT,
   merchant_id TEXT,
+  location_id TEXT,
+  location_name TEXT,
   expires_at TIMESTAMPTZ,
+  connected_at TIMESTAMPTZ DEFAULT NOW(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -137,6 +159,7 @@ ALTER TABLE tanks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tank_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE square_connections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE square_oauth_states ENABLE ROW LEVEL SECURITY;
 
 -- Create indexes for common queries
 CREATE INDEX idx_supplier_links_user ON supplier_links(user_id);

@@ -42,19 +42,25 @@ export default function InvoiceDetailPage() {
         setInvoice(data.invoice);
         setItems(data.items || []);
 
-        if (data.invoice?.status === 'uploaded' && data.items?.length === 0) {
+        if (data.invoice?.status === 'uploaded' && (data.items?.length ?? 0) === 0) {
           setParsing(true);
-          const parseRes = await fetch(`/api/invoices/parse`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ invoiceId: id, userId: user.id }),
-          });
-          const parseData = await parseRes.json();
-          if (parseRes.ok && parseData.items) {
-            setItems(parseData.items);
-            setInvoice((prev) => prev ? { ...prev, status: 'parsed' } : null);
+          setError('');
+          try {
+            const parseRes = await fetch(`/api/invoices/parse`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ invoiceId: id, userId: user.id }),
+            });
+            const parseData = await parseRes.json();
+            if (parseRes.ok && parseData.items?.length) {
+              setItems(parseData.items);
+              setInvoice((prev) => prev ? { ...prev, status: 'parsed' } : null);
+            } else if (!parseRes.ok) {
+              setError(parseData.error || 'Parsing failed');
+            }
+          } finally {
+            setParsing(false);
           }
-          setParsing(false);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load');
@@ -68,6 +74,28 @@ export default function InvoiceDetailPage() {
 
   const handleConfirm = () => {
     router.push(`/invoices/${id}/square`);
+  };
+
+  const handleParseAgain = async () => {
+    if (!user?.id) return;
+    setParsing(true);
+    setError('');
+    try {
+      const parseRes = await fetch(`/api/invoices/parse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoiceId: id, userId: user.id }),
+      });
+      const parseData = await parseRes.json();
+      if (parseRes.ok && parseData.items?.length) {
+        setItems(parseData.items);
+        setInvoice((prev) => prev ? { ...prev, status: 'parsed' } : null);
+      } else if (!parseRes.ok) {
+        setError(parseData.error || 'Parsing failed');
+      }
+    } finally {
+      setParsing(false);
+    }
   };
 
   if (loading) {
@@ -106,8 +134,16 @@ export default function InvoiceDetailPage() {
         </Card>
       ) : (
         <Card title="Parsed Items">
+          {error && (
+            <p className="text-red-500 text-sm mb-4">{error}</p>
+          )}
           {items.length === 0 ? (
-            <p className="text-slate-500">No items could be extracted. Please check the file.</p>
+            <div className="space-y-3">
+              <p className="text-slate-500">No items could be extracted. Check the file or retry. Logs appear in the terminal where you run <code className="bg-slate-100 px-1 rounded">npm run dev</code>.</p>
+              <Button variant="secondary" onClick={handleParseAgain} disabled={parsing}>
+                {parsing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Parsing...</> : 'Parse again'}
+              </Button>
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">

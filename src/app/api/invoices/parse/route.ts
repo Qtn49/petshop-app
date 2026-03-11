@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase-server';
-import OpenAI from 'openai';
+import { parseInvoiceText } from '@/lib/invoice/parseInvoice';
 
 async function extractTextFromFile(
   supabase: Awaited<ReturnType<typeof getSupabaseClient>>,
@@ -34,6 +34,8 @@ async function extractTextFromFile(
   throw new Error('Unsupported file type');
 }
 
+const sep = '─'.repeat(60);
+
 export async function POST(request: Request) {
   try {
     const supabase = getSupabaseClient();
@@ -46,6 +48,11 @@ export async function POST(request: Request) {
       );
     }
 
+    // Log so you see activity in the terminal (where "npm run dev" runs)
+    console.log('\n' + sep);
+    console.log('📥 PARSE REQUEST — invoiceId:', invoiceId, 'userId:', userId);
+    console.log(sep);
+
     const { data: invoice, error: invError } = await supabase
       .from('invoices')
       .select('*')
@@ -54,8 +61,13 @@ export async function POST(request: Request) {
       .single();
 
     if (invError || !invoice) {
+      console.log('❌ Invoice not found:', invError?.message || 'No invoice');
+      console.log(sep + '\n');
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     }
+
+    // Allow re-parse: remove existing items so we don't duplicate
+    await supabase.from('invoice_items').delete().eq('invoice_id', invoiceId);
 
     await supabase
       .from('invoices')
@@ -68,7 +80,16 @@ export async function POST(request: Request) {
       invoice.file_type
     );
 
+    // Log raw extracted text — easy to read in console
+    console.log('\n' + sep);
+    console.log('📄 RAW TEXT EXTRACTED FROM FILE');
+    console.log(sep);
+    console.log(rawText);
+    console.log(sep + '\n');
+
     if (!rawText?.trim()) {
+      console.log('❌ Extracted text is empty — check file format / content');
+      console.log(sep + '\n');
       await supabase
         .from('invoices')
         .update({ status: 'error' })
@@ -79,31 +100,22 @@ export async function POST(request: Request) {
       );
     }
 
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: `Extract product/line items from this invoice text. Return a JSON array of objects with keys: product_name (string), quantity (number), price (number or null if not found). Example: [{"product_name":"Fish Food 5kg","quantity":2,"price":29.99}]`,
-        },
-        { role: 'user', content: rawText.slice(0, 8000) },
-      ],
-      response_format: { type: 'json_object' },
-    });
+    const { items } = await parseInvoiceText(rawText);
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) throw new Error('No response from OpenAI');
-
-    const parsed = JSON.parse(content);
-    const items = Array.isArray(parsed.items) ? parsed.items : Array.isArray(parsed) ? parsed : [];
+    if (items.length > 0) {
+      console.log('📋 Parsed items:', JSON.stringify(items, null, 2));
+      console.log(sep + '\n');
+    } else {
+      console.log('⚠️ No items parsed (regex and/or AI returned empty).');
+      console.log(sep + '\n');
+    }
 
     for (const item of items) {
       await supabase.from('invoice_items').insert({
         invoice_id: invoiceId,
-        product_name: item.product_name || item.name || 'Unknown',
-        quantity: Number(item.quantity) || 1,
-        price: item.price != null ? Number(item.price) : null,
+        product_name: item.name,
+        quantity: item.quantity,
+        price: item.price,
         status: 'pending',
       });
     }
@@ -114,15 +126,19 @@ export async function POST(request: Request) {
       .eq('id', invoiceId);
 
     return NextResponse.json({
-      items: items.map((i: { product_name?: string; name?: string; quantity?: number; price?: number }) => ({
-        product_name: i.product_name || i.name || 'Unknown',
-        quantity: Number(i.quantity) || 1,
-        price: i.price != null ? Number(i.price) : undefined,
+      items: items.map((i) => ({
+        product_name: i.name,
+        quantity: i.quantity,
+        price: i.price,
       })),
     });
   } catch (err) {
+    const message = err instanceof Error ? err.message : 'Parsing failed';
+    console.log('❌ PARSE ERROR:', message);
+    if (err instanceof Error && err.stack) console.log(err.stack);
+    console.log(sep + '\n');
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Parsing failed' },
+      { error: message },
       { status: 500 }
     );
   }

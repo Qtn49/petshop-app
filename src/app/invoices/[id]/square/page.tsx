@@ -167,7 +167,7 @@ export default function InvoiceSquarePage() {
                 Connect your Square account to match products and create purchase orders.
               </p>
               <a
-                href={`/api/square/auth?userId=${user?.id}`}
+                href={`/api/square/connect?userId=${user?.id}`}
                 className="inline-flex items-center gap-2 mt-2 text-primary-600 font-medium"
               >
                 <Link2 className="w-4 h-4" />

@@ -1,9 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
+import { Link2, Loader2, Check } from 'lucide-react';
+
+type SquareStatus = {
+  connected: boolean;
+  locationName: string | null;
+  locationId: string | null;
+  merchantId: string | null;
+  connectedAt: string | null;
+};
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -12,6 +21,44 @@ export default function SettingsPage() {
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const [squareStatus, setSquareStatus] = useState<SquareStatus | null>(null);
+  const [squareLoading, setSquareLoading] = useState(true);
+  const [squareDisconnecting, setSquareDisconnecting] = useState(false);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    if (params?.get('square_connected') === '1') {
+      setMessage({ type: 'success', text: 'Square account connected successfully.' });
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({}, '', '/settings');
+      }
+    }
+    if (params?.get('square_error')) {
+      const desc = params.get('square_error_description') || 'Something went wrong.';
+      setMessage({ type: 'error', text: `Square: ${desc}` });
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({}, '', '/settings');
+      }
+    }
+
+    const fetchSquare = async () => {
+      try {
+        const res = await fetch(`/api/square/connection?userId=${encodeURIComponent(user.id)}`);
+        const data = await res.json();
+        if (res.ok) setSquareStatus(data);
+        else setSquareStatus({ connected: false, locationName: null, locationId: null, merchantId: null, connectedAt: null });
+      } catch {
+        setSquareStatus({ connected: false, locationName: null, locationId: null, merchantId: null, connectedAt: null });
+      } finally {
+        setSquareLoading(false);
+      }
+    };
+
+    fetchSquare();
+  }, [user?.id]);
 
   const handleUpdateName = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,6 +112,35 @@ export default function SettingsPage() {
       }
     } catch {
       setMessage({ type: 'error', text: 'PIN change failed' });
+    }
+  };
+
+  const handleConnectSquare = () => {
+    if (!user?.id) return;
+    window.location.href = `/api/square/connect?userId=${encodeURIComponent(user.id)}`;
+  };
+
+  const handleDisconnectSquare = async () => {
+    if (!user?.id) return;
+    setMessage(null);
+    setSquareDisconnecting(true);
+    try {
+      const res = await fetch('/api/square/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSquareStatus({ connected: false, locationName: null, locationId: null, merchantId: null, connectedAt: null });
+        setMessage({ type: 'success', text: 'Square account disconnected.' });
+      } else {
+        setMessage({ type: 'error', text: data.error || 'Failed to disconnect' });
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to disconnect' });
+    } finally {
+      setSquareDisconnecting(false);
     }
   };
 
@@ -140,6 +216,51 @@ export default function SettingsPage() {
           </div>
           <Button type="submit">Change PIN</Button>
         </form>
+      </Card>
+
+      <Card title="Square Integration">
+        {squareLoading ? (
+          <div className="flex items-center gap-2 text-slate-500">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Loading…</span>
+          </div>
+        ) : squareStatus?.connected ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-green-700">
+              <Check className="w-5 h-5" />
+              <span className="font-medium">Square Connected</span>
+            </div>
+            {squareStatus.locationName && (
+              <p className="text-sm text-slate-600">
+                Location: {squareStatus.locationName}
+              </p>
+            )}
+            <Button
+              variant="secondary"
+              onClick={handleDisconnectSquare}
+              disabled={squareDisconnecting}
+            >
+              {squareDisconnecting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Disconnecting…
+                </>
+              ) : (
+                'Disconnect'
+              )}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">
+              Connect your Square account to sync catalog and create purchase orders from invoices.
+            </p>
+            <Button onClick={handleConnectSquare}>
+              <Link2 className="w-4 h-4 mr-2" />
+              Connect with Square
+            </Button>
+          </div>
+        )}
       </Card>
     </div>
   );
