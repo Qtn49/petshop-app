@@ -46,6 +46,7 @@ export function generateSquareOAuthUrl(state: string): string {
 
   const query = [
     `client_id=${encodeURIComponent(SQUARE_APP_ID)}`,
+    'response_type=code',
     `scope=${encodeURIComponent(SQUARE_SCOPES)}`,
     `redirect_uri=${encodeURIComponent(SQUARE_REDIRECT_URI)}`,
     `state=${encodeURIComponent(state || '')}`,
