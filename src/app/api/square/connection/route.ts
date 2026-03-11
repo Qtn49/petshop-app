@@ -14,7 +14,9 @@ export async function GET(request: Request) {
 
   try {
     const status = await getConnectionStatus(userId);
-    return NextResponse.json(status);
+    return NextResponse.json(status, {
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
+    });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Failed to get connection status' },

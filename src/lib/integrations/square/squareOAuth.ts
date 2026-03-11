@@ -31,13 +31,14 @@ function getSquareOAuthBaseUrl(): string {
 
 /**
  * Generate the Square OAuth authorization URL.
- * Uses SQUARE_APPLICATION_ID, SQUARE_REDIRECT_URI, and includes scope, state, session=false.
- * redirect_uri is encoded with encodeURIComponent.
+ * If redirectUri is provided (e.g. from request origin), it is used; otherwise SQUARE_REDIRECT_URI from env.
+ * This allows using the current request URL (e.g. ngrok) so redirects stay on the same host.
  */
-export function generateSquareOAuthUrl(state: string): string {
-  if (!SQUARE_APP_ID || !SQUARE_REDIRECT_URI) {
+export function generateSquareOAuthUrl(state: string, redirectUri?: string): string {
+  const redirect = redirectUri ?? SQUARE_REDIRECT_URI;
+  if (!SQUARE_APP_ID || !redirect) {
     throw new Error(
-      'Square OAuth not configured: missing SQUARE_APPLICATION_ID or SQUARE_REDIRECT_URI'
+      'Square OAuth not configured: missing SQUARE_APPLICATION_ID or redirect_uri (env or request)'
     );
   }
 
@@ -48,13 +49,12 @@ export function generateSquareOAuthUrl(state: string): string {
     `client_id=${encodeURIComponent(SQUARE_APP_ID)}`,
     'response_type=code',
     `scope=${encodeURIComponent(SQUARE_SCOPES)}`,
-    `redirect_uri=${encodeURIComponent(SQUARE_REDIRECT_URI)}`,
+    `redirect_uri=${encodeURIComponent(redirect)}`,
     `state=${encodeURIComponent(state || '')}`,
     'session=false',
   ].join('&');
 
   const url = `${authorizeUrl}?${query}`;
-  console.log('Square OAuth URL:', url);
   return url;
 }
 
@@ -68,10 +68,15 @@ export function getSquareAuthUrl(state: string): string {
 
 /**
  * Exchange authorization code for access and refresh tokens.
+ * redirectUri must match the redirect_uri used in the authorize request (e.g. from stored state).
  */
-export async function exchangeCodeForToken(code: string): Promise<SquareTokenResponse> {
-  if (!SQUARE_APP_ID || !SQUARE_APP_SECRET || !SQUARE_REDIRECT_URI) {
-    throw new Error('Square OAuth not configured');
+export async function exchangeCodeForToken(
+  code: string,
+  redirectUri?: string
+): Promise<SquareTokenResponse> {
+  const redirect = redirectUri ?? SQUARE_REDIRECT_URI;
+  if (!SQUARE_APP_ID || !SQUARE_APP_SECRET || !redirect) {
+    throw new Error('Square OAuth not configured (need client_id, client_secret, redirect_uri)');
   }
 
   const baseUrl = getSquareOAuthBaseUrl();
@@ -85,18 +90,27 @@ export async function exchangeCodeForToken(code: string): Promise<SquareTokenRes
     },
     body: JSON.stringify({
       client_id: SQUARE_APP_ID,
+      client_secret: SQUARE_APP_SECRET,
       code,
       grant_type: 'authorization_code',
-      redirect_uri: SQUARE_REDIRECT_URI,
+      redirect_uri: redirect,
     }),
   });
 
-  const data = await res.json();
+  const data = (await res.json()) as { message?: string; errors?: Array<{ code?: string; detail?: string }> };
 
   if (!res.ok) {
+    const detail = data?.errors?.[0];
     const message =
-      data?.message || data?.errors?.[0]?.detail || `Square OAuth error ${res.status}`;
-    throw new Error(message);
+      data?.message ||
+      detail?.detail ||
+      (detail?.code ? `Square: ${detail.code}` : null) ||
+      `Square OAuth error ${res.status}`;
+    const hint =
+      message === 'Not Authorized' || res.status === 401
+        ? ' Check: SQUARE_REDIRECT_URI must exactly match the callback URL (no trailing slash). Use sandbox credentials for sandbox.'
+        : '';
+    throw new Error(message + hint);
   }
 
   return {
@@ -115,8 +129,8 @@ export function generateSecureState(): string {
 }
 
 /**
- * Check if Square OAuth env vars are set.
+ * Check if Square OAuth env vars are set (redirect_uri can come from request when starting OAuth).
  */
 export function isSquareOAuthConfigured(): boolean {
-  return Boolean(SQUARE_APP_ID && SQUARE_APP_SECRET && SQUARE_REDIRECT_URI);
+  return Boolean(SQUARE_APP_ID && SQUARE_APP_SECRET);
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
@@ -26,39 +26,60 @@ export default function SettingsPage() {
   const [squareLoading, setSquareLoading] = useState(true);
   const [squareDisconnecting, setSquareDisconnecting] = useState(false);
 
+  // When landing with square_connected=1, show success and connected immediately (before user/fetch)
   useEffect(() => {
-    if (!user?.id) return;
-
-    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    if (params?.get('square_connected') === '1') {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('square_connected') === '1') {
       setMessage({ type: 'success', text: 'Square account connected successfully.' });
-      if (typeof window !== 'undefined') {
-        window.history.replaceState({}, '', '/settings');
-      }
+      window.history.replaceState({}, '', '/settings');
+      setSquareStatus((prev) => ({
+        ...(prev ?? {}),
+        connected: true,
+        locationName: prev?.locationName ?? null,
+        locationId: prev?.locationId ?? null,
+        merchantId: prev?.merchantId ?? null,
+        connectedAt: prev?.connectedAt ?? new Date().toISOString(),
+      }));
+      setSquareLoading(false);
     }
-    if (params?.get('square_error')) {
+    if (params.get('square_error')) {
       const desc = params.get('square_error_description') || 'Something went wrong.';
       setMessage({ type: 'error', text: `Square: ${desc}` });
-      if (typeof window !== 'undefined') {
-        window.history.replaceState({}, '', '/settings');
-      }
+      window.history.replaceState({}, '', '/settings');
+      setSquareLoading(false);
     }
+  }, []);
 
-    const fetchSquare = async () => {
-      try {
-        const res = await fetch(`/api/square/connection?userId=${encodeURIComponent(user.id)}`);
-        const data = await res.json();
-        if (res.ok) setSquareStatus(data);
-        else setSquareStatus({ connected: false, locationName: null, locationId: null, merchantId: null, connectedAt: null });
-      } catch {
-        setSquareStatus({ connected: false, locationName: null, locationId: null, merchantId: null, connectedAt: null });
-      } finally {
-        setSquareLoading(false);
+  // Fetch Square connection status when user is available (and refetch after connect so persisted data is shown)
+  const fetchSquareStatus = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const res = await fetch(`/api/square/connection?userId=${encodeURIComponent(user.id)}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (res.ok) {
+        setSquareStatus((prev) => (prev?.connected && !data.connected ? { ...data, connected: true } : data));
+      } else {
+        setSquareStatus((prev) => (prev?.connected ? prev : { connected: false, locationName: null, locationId: null, merchantId: null, connectedAt: null }));
       }
-    };
-
-    fetchSquare();
+    } catch {
+      setSquareStatus((prev) => (prev?.connected ? prev : { connected: false, locationName: null, locationId: null, merchantId: null, connectedAt: null }));
+    } finally {
+      setSquareLoading(false);
+    }
   }, [user?.id]);
+
+  useEffect(() => {
+    fetchSquareStatus();
+  }, [fetchSquareStatus]);
+
+  // Refetch when returning to this tab so connection status stays in sync
+  useEffect(() => {
+    if (typeof window === 'undefined' || !user?.id) return;
+    const onFocus = () => fetchSquareStatus();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [user?.id, fetchSquareStatus]);
 
   const handleUpdateName = async (e: React.FormEvent) => {
     e.preventDefault();

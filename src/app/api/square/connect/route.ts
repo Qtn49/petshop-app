@@ -1,12 +1,9 @@
 import { NextResponse } from 'next/server';
 import { generateSquareOAuthUrl, generateSecureState, isSquareOAuthConfigured } from '@/lib/integrations/square/squareOAuth';
-
-const STATE_COOKIE = 'square_oauth_state';
-const USER_COOKIE = 'square_oauth_user_id';
-const COOKIE_MAX_AGE = 600; // 10 minutes
+import { storeOAuthState } from '@/lib/integrations/square/squareService';
 
 /**
- * Start Square OAuth: generate secure state, store in session (cookies), redirect to Square.
+ * Start Square OAuth: generate secure state, store in DB (works across redirects on Vercel), redirect to Square.
  * Call with: GET /api/square/connect?userId=<user_id>
  */
 export async function GET(request: Request) {
@@ -28,25 +25,29 @@ export async function GET(request: Request) {
   }
 
   try {
-    const state = generateSecureState();
-    const url = generateSquareOAuthUrl(state);
+    // redirect_uri must match Square Dashboard exactly (no trailing slash)
+    const envRedirect = process.env.SQUARE_REDIRECT_URI?.trim();
+    let redirectUri: string;
+    if (envRedirect) {
+      redirectUri = envRedirect.replace(/\/+$/, '');
+    } else {
+      const proto = request.headers.get('x-forwarded-proto') || request.headers.get('x-forwarded-protocol');
+      const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
+      const requestUrl = new URL(request.url);
+      let origin: string;
+      if (proto && host) {
+        const scheme = proto === 'https' || proto === 'https,' ? 'https' : 'http';
+        origin = `${scheme}://${host.split(',')[0].trim()}`;
+      } else {
+        origin = requestUrl.origin || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      }
+      redirectUri = `${origin.replace(/\/+$/, '')}/api/square/callback`;
+    }
 
-    const res = NextResponse.redirect(url);
-    res.cookies.set(STATE_COOKIE, state, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: COOKIE_MAX_AGE,
-      path: '/',
-    });
-    res.cookies.set(USER_COOKIE, userId, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: COOKIE_MAX_AGE,
-      path: '/',
-    });
-    return res;
+    const state = generateSecureState();
+    await storeOAuthState(state, userId, redirectUri);
+    const url = generateSquareOAuthUrl(state, redirectUri);
+    return NextResponse.redirect(url);
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Failed to start Square connect' },
