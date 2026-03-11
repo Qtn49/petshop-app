@@ -43,10 +43,15 @@ export async function GET(request: Request) {
       result.objects?.map((obj) => ({
         id: obj.id,
         name: obj.itemData?.name,
-        variations: obj.itemData?.variations?.map((v) => ({
-          id: v.id,
-          name: v.itemVariationData?.name,
-        })),
+        variations: obj.itemData?.variations?.map((v) => {
+          const amount = v.itemVariationData?.priceMoney?.amount;
+          const price = amount != null ? Number(amount) / 100 : undefined;
+          return {
+            id: v.id,
+            name: v.itemVariationData?.name,
+            price,
+          };
+        }),
       })) || [];
 
     return NextResponse.json({ items });

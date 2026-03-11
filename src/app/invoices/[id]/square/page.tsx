@@ -12,18 +12,22 @@ type InvoiceItem = {
   product_name: string;
   quantity: number;
   price?: number;
+  calculated_price?: number | null;
 };
 
 type CatalogItem = {
   id: string;
   name: string;
-  variations?: { id: string; name: string }[];
+  variations?: { id: string; name: string; price?: number }[];
 };
 
 type MatchedItem = {
   product_name: string;
   quantity: number;
   price?: number;
+  calculated_price?: number | null;
+  /** Sale price: from Square when matched, from calculated_price when unmatched */
+  salePrice?: number | null;
   catalogItemId?: string;
   catalogVariationId?: string;
   catalogName?: string;
@@ -76,13 +80,20 @@ export default function InvoiceSquarePage() {
           );
           const variation = match?.variations?.[0];
           const catalogName = match?.name ?? undefined;
+          const isMatched = !!match;
+          const salePrice = isMatched && variation?.price != null
+            ? variation.price
+            : (item.calculated_price != null && !Number.isNaN(Number(item.calculated_price))
+              ? Number(item.calculated_price)
+              : undefined);
           return {
             ...item,
-            product_name: catalogName ? catalogName : item.product_name,
+            product_name: item.product_name,
             catalogItemId: match?.id,
             catalogVariationId: variation?.id,
             catalogName,
-            status: match ? 'matched' : 'unmatched',
+            salePrice: salePrice ?? null,
+            status: isMatched ? 'matched' : 'unmatched',
             selected: true,
           } as MatchedItem;
         });
@@ -143,7 +154,7 @@ export default function InvoiceSquarePage() {
           items: toCreate.map((i) => ({
             product_name: i.product_name,
             quantity: i.quantity,
-            price: i.price,
+            price: i.salePrice ?? i.calculated_price ?? i.price,
           })),
         }),
       });
@@ -248,7 +259,8 @@ export default function InvoiceSquarePage() {
                 <th className="w-10 py-2 text-sm font-medium text-slate-600 text-center">Add</th>
                 <th className="text-left py-2 text-sm font-medium text-slate-600">Product</th>
                 <th className="text-left py-2 text-sm font-medium text-slate-600">Qty</th>
-                <th className="text-left py-2 text-sm font-medium text-slate-600">Price</th>
+                <th className="text-left py-2 text-sm font-medium text-slate-600">Cost</th>
+                <th className="text-left py-2 text-sm font-medium text-slate-600">Sale price</th>
                 <th className="text-left py-2 text-sm font-medium text-slate-600">Match</th>
               </tr>
             </thead>
@@ -282,6 +294,11 @@ export default function InvoiceSquarePage() {
                   <td className="py-3 text-slate-800">
                     {item.price != null ? `$${Number(item.price).toFixed(2)}` : '-'}
                   </td>
+                  <td className="py-3 text-slate-800">
+                    {item.salePrice != null && !Number.isNaN(item.salePrice)
+                      ? `$${Number(item.salePrice).toFixed(2)}`
+                      : '-'}
+                  </td>
                   <td className="py-3">
                     <span
                       className={`text-xs px-2 py-1 rounded ${
@@ -290,7 +307,7 @@ export default function InvoiceSquarePage() {
                           : 'bg-slate-100 text-slate-600'
                       }`}
                     >
-                      {item.status === 'matched' ? item.catalogName || 'Matched' : 'Not in Square'}
+                      {item.status === 'matched' ? 'Matched' : 'Not in Square'}
                     </span>
                   </td>
                 </tr>

@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { Link2, Loader2, Check, Plus, Trash2 } from 'lucide-react';
+import { Link2, Loader2, Check, Plus, Trash2, Info } from 'lucide-react';
+import { getPsychologicalPricingEnabled, setPsychologicalPricingEnabled } from '@/lib/pricing/psychologicalPricing';
 
 type FormulaRow = { label: string; formula_percent: string };
 
@@ -31,6 +32,7 @@ export default function SettingsPage() {
   const [invoiceFormulas, setInvoiceFormulas] = useState<FormulaRow[]>([]);
   const [invoiceFormulasLoading, setInvoiceFormulasLoading] = useState(true);
   const [invoiceFormulasSaving, setInvoiceFormulasSaving] = useState(false);
+  const [psychologicalPricing, setPsychologicalPricing] = useState(false);
 
   // When landing with square_connected=1, show success and connected immediately (before user/fetch)
   useEffect(() => {
@@ -114,6 +116,10 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchInvoiceFormulas();
   }, [fetchInvoiceFormulas]);
+
+  useEffect(() => {
+    setPsychologicalPricing(getPsychologicalPricingEnabled());
+  }, []);
 
   const saveInvoiceFormulas = async () => {
     if (!user?.id) return;
@@ -298,6 +304,37 @@ export default function SettingsPage() {
 
       <Card title="Invoices" className="border-t border-slate-100">
         <div className="space-y-4">
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+            <div className="flex items-start gap-2">
+              <div>
+                <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
+                  Psychological pricing
+                  <span className="relative group inline-flex">
+                    <Info className="w-4 h-4 text-slate-400 shrink-0" aria-hidden />
+                    <span className="absolute left-0 top-full mt-1.5 px-3 py-2 w-72 text-xs font-normal text-slate-700 bg-white border border-slate-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity z-10 pointer-events-none">
+                      After your percentage markup is applied, prices are rounded down to feel cheaper to customers: under $10 or $10–$100 → X.99 (e.g. 16.80 → 15.99); $100 and above → X.95 (e.g. 129.40 → 128.95). Only rounds down, never up.
+                    </span>
+                  </span>
+                </p>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  When enabled, calculated prices are rounded down to .99 (under $100) or .95 ($100+) so they feel cheaper to customers. Default: off.
+                </p>
+              </div>
+            </div>
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={psychologicalPricing}
+                onChange={(e) => {
+                  const v = e.target.checked;
+                  setPsychologicalPricing(v);
+                  setPsychologicalPricingEnabled(v);
+                }}
+                className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-sm text-slate-700">{psychologicalPricing ? 'On' : 'Off'}</span>
+            </label>
+          </div>
           <p className="text-sm text-slate-600">
             Calculated price formulas: label and formula in % only (e.g. <code className="bg-slate-100 px-1 rounded text-xs">100,10</code> = 100% then 10%).
           </p>

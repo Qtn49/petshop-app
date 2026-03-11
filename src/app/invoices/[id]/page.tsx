@@ -7,6 +7,7 @@ import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import { Loader2, Check, AlertCircle, Pencil } from 'lucide-react';
 import { formulaPercentToMultiplier } from '@/lib/invoice/formula';
+import { applyPsychologicalPricing, getPsychologicalPricingEnabled } from '@/lib/pricing/psychologicalPricing';
 
 type FormulaOption = { id: string; label: string; multiplier: number };
 
@@ -19,22 +20,12 @@ type ParsedItem = {
   formula?: string;
 };
 
-type CatalogItem = { id: string; name: string };
 type EditingCell = { index: number; field: 'skn' | 'name' | 'quantity' | 'calculated_price' } | null;
 
 const DEFAULT_FORMULAS: FormulaOption[] = [
   { id: 'default_100', label: '100%', multiplier: 2 * 1.1 },
   { id: 'default_35', label: '35%', multiplier: 1.35 * 1.1 },
 ];
-
-function matchCatalogName(productName: string, catalogItems: CatalogItem[]): string | null {
-  const match = catalogItems.find(
-    (c) =>
-      c.name?.toLowerCase().includes(productName.toLowerCase()) ||
-      productName.toLowerCase().includes(c.name?.toLowerCase() || '')
-  );
-  return match?.name ?? null;
-}
 
 export default function InvoiceDetailPage() {
   const params = useParams();
@@ -64,29 +55,14 @@ export default function InvoiceDetailPage() {
       const item = next[index];
       if (!item) return prev;
       const base = item.price != null ? Number(item.price) : null;
-      const calculated = base != null && base > 0 ? Math.round(base * formula.multiplier * 100) / 100 : null;
+      let calculated = base != null && base > 0 ? Math.round(base * formula.multiplier * 100) / 100 : null;
+      if (calculated != null && calculated > 0 && getPsychologicalPricingEnabled()) {
+        calculated = applyPsychologicalPricing(calculated);
+      }
       next[index] = { ...item, calculated_price: calculated, formula: formulaId };
       return next;
     });
   };
-
-  const applyCatalogCorrection = useCallback((currentItems: ParsedItem[]) => {
-    if (!user?.id || currentItems.length === 0) return;
-    fetch(`/api/square/catalog?userId=${user.id}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error || !Array.isArray(data.items)) return;
-        const catalogItems: CatalogItem[] = data.items;
-        const corrected = currentItems.map((item) => {
-          const catalogName = matchCatalogName(item.product_name, catalogItems);
-          return catalogName
-            ? { ...item, product_name: catalogName }
-            : item;
-        });
-        setItems(corrected);
-      })
-      .catch(() => {});
-  }, [user?.id]);
 
   const startEdit = (index: number, field: 'skn' | 'name' | 'quantity' | 'calculated_price') => {
     const item = items[index];
@@ -181,10 +157,14 @@ export default function InvoiceDetailPage() {
         setInvoice(data.invoice);
         const defaultMultiplier = options[0]?.multiplier ?? DEFAULT_FORMULAS[0].multiplier;
         const defaultFormulaId = options[0]?.id ?? 'custom';
+        const usePsychological = getPsychologicalPricingEnabled();
         const initialItems = (data.items || []).map((i: { skn?: string; product_name: string; quantity: number; price?: number; calculated_price?: number | null }) => {
           const price = i.price != null ? Number(i.price) : null;
           const hasCalc = i.calculated_price != null && !Number.isNaN(Number(i.calculated_price));
-          const calculated_price = hasCalc ? Number(i.calculated_price) : (price != null && price > 0 ? Math.round(price * defaultMultiplier * 100) / 100 : null);
+          let calculated_price = hasCalc ? Number(i.calculated_price) : (price != null && price > 0 ? Math.round(price * defaultMultiplier * 100) / 100 : null);
+          if (calculated_price != null && calculated_price > 0 && usePsychological) {
+            calculated_price = applyPsychologicalPricing(calculated_price);
+          }
           let formula: string = defaultFormulaId;
           if (hasCalc && price != null && price > 0 && calculated_price != null) {
             const matched = options.find((opt) => Math.round(price * opt.multiplier * 100) / 100 === calculated_price);
@@ -200,7 +180,6 @@ export default function InvoiceDetailPage() {
           };
         });
         setItems(initialItems);
-        if (initialItems.length > 0) applyCatalogCorrection(initialItems);
 
         if (data.invoice?.status === 'uploaded' && (data.items?.length ?? 0) === 0) {
           setParsing(true);
@@ -215,9 +194,13 @@ export default function InvoiceDetailPage() {
             if (parseRes.ok && parseData.items?.length) {
               const defaultMultiplier = options[0]?.multiplier ?? DEFAULT_FORMULAS[0].multiplier;
               const defaultFormulaId = options[0]?.id ?? 'custom';
+              const usePsychological = getPsychologicalPricingEnabled();
               const parsedItems = (parseData.items as Array<{ skn?: string; product_name?: string; name?: string; quantity: number; price?: number }>).map((i) => {
                 const base = i.price != null ? Number(i.price) : null;
-                const calculated_price = base != null && base > 0 ? Math.round(base * defaultMultiplier * 100) / 100 : null;
+                let calculated_price = base != null && base > 0 ? Math.round(base * defaultMultiplier * 100) / 100 : null;
+                if (calculated_price != null && calculated_price > 0 && usePsychological) {
+                  calculated_price = applyPsychologicalPricing(calculated_price);
+                }
                 return {
                   skn: i.skn ?? (i as { code?: string }).code ?? '',
                   product_name: i.product_name ?? i.name ?? '',
@@ -228,7 +211,6 @@ export default function InvoiceDetailPage() {
                 };
               });
               setItems(parsedItems);
-              applyCatalogCorrection(parsedItems);
               setInvoice((prev) => prev ? { ...prev, status: 'parsed' } : null);
             } else if (!parseRes.ok) {
               setError(parseData.error || 'Parsing failed');
@@ -245,7 +227,7 @@ export default function InvoiceDetailPage() {
     };
 
     fetchData();
-  }, [id, user?.id, applyCatalogCorrection]);
+  }, [id, user?.id]);
 
   const handleConfirm = async () => {
     if (!user?.id || items.length === 0) return;
@@ -291,9 +273,13 @@ export default function InvoiceDetailPage() {
       if (parseRes.ok && parseData.items?.length) {
         const defaultMultiplier = formulaOptions[0]?.multiplier ?? DEFAULT_FORMULAS[0].multiplier;
         const defaultFormulaId = formulaOptions[0]?.id ?? 'custom';
+        const usePsychological = getPsychologicalPricingEnabled();
         const parsedItems = (parseData.items as Array<{ skn?: string; product_name?: string; name?: string; quantity: number; price?: number }>).map((i) => {
           const base = i.price != null ? Number(i.price) : null;
-          const calculated_price = base != null && base > 0 ? Math.round(base * defaultMultiplier * 100) / 100 : null;
+          let calculated_price = base != null && base > 0 ? Math.round(base * defaultMultiplier * 100) / 100 : null;
+          if (calculated_price != null && calculated_price > 0 && usePsychological) {
+            calculated_price = applyPsychologicalPricing(calculated_price);
+          }
           return {
             skn: i.skn ?? (i as { code?: string }).code ?? '',
             product_name: i.product_name ?? i.name ?? '',
@@ -304,7 +290,6 @@ export default function InvoiceDetailPage() {
           };
         });
         setItems(parsedItems);
-        applyCatalogCorrection(parsedItems);
         setInvoice((prev) => prev ? { ...prev, status: 'parsed' } : null);
       } else if (!parseRes.ok) {
         setError(parseData.error || 'Parsing failed');
