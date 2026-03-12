@@ -17,3 +17,12 @@ body {
     text-wrap: balance;
   }
 }
+
+@keyframes missing-bg {
+  0%, 100% { background-color: rgb(254 243 199 / 0.8); }
+  50% { background-color: rgb(251 191 36 / 0.9); }
+}
+
+.animate-missing-bg {
+  animation: missing-bg 0.8s ease-in-out infinite;
+}

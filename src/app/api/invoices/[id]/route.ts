@@ -33,11 +33,13 @@ export async function GET(
   return NextResponse.json({
     invoice,
     items: (items || []).map((i) => ({
+      id: i.id,
       skn: i.skn ?? '',
       product_name: i.product_name,
       quantity: i.quantity,
       price: i.price,
       calculated_price: i.calculated_price != null ? Number(i.calculated_price) : null,
+      in_purchase_order: Boolean((i as { in_purchase_order?: boolean }).in_purchase_order),
     })),
   });
 }

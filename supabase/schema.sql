@@ -18,14 +18,29 @@ DROP POLICY IF EXISTS "Allow invoices read" ON storage.objects;
 CREATE POLICY "Allow invoices read" ON storage.objects
   FOR SELECT USING (bucket_id = 'invoices');
 
--- Users table (extends Supabase auth or stores PIN users)
+-- Organization (company) for first-launch detection and settings
+CREATE TABLE IF NOT EXISTS organization (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  company_name TEXT NOT NULL,
+  address TEXT,
+  email TEXT,
+  phone TEXT,
+  currency TEXT NOT NULL DEFAULT 'AUD',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Users table (PIN-based; one organization per user; role for admin/staff)
 CREATE TABLE users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
   pin_hash TEXT NOT NULL,
   email TEXT,
   name TEXT,
+  role TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('admin', 'staff')),
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (organization_id, name)
 );
 
 -- Supplier links
@@ -63,6 +78,7 @@ CREATE TABLE invoice_items (
   square_item_id TEXT,
   square_catalog_item_id TEXT,
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'matched', 'unmatched', 'ordered')),
+  in_purchase_order BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
