@@ -4,10 +4,22 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { Link2, Loader2, Check, Plus, Trash2, Info } from 'lucide-react';
+import { Link2, Loader2, Check, Plus, Trash2, Info, UserPlus } from 'lucide-react';
 import { getPsychologicalPricingEnabled, setPsychologicalPricingEnabled } from '@/lib/pricing/psychologicalPricing';
+import { clearOrganizationConnection } from '@/lib/organization-connection';
 
 type FormulaRow = { label: string; formula_percent: string };
+
+type Organization = {
+  id: string;
+  company_name: string;
+  address: string | null;
+  email: string | null;
+  phone: string | null;
+  currency: string;
+};
+
+type UserItem = { id: string; name: string | null; role: string };
 
 type SquareStatus = {
   connected: boolean;
@@ -18,7 +30,7 @@ type SquareStatus = {
 };
 
 export default function SettingsPage() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [name, setName] = useState(user?.name || '');
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
@@ -33,6 +45,29 @@ export default function SettingsPage() {
   const [invoiceFormulasLoading, setInvoiceFormulasLoading] = useState(true);
   const [invoiceFormulasSaving, setInvoiceFormulasSaving] = useState(false);
   const [psychologicalPricing, setPsychologicalPricing] = useState(false);
+
+  const [organization, setOrganization] = useState<Organization | null>(null);
+  const [organizationLoading, setOrganizationLoading] = useState(true);
+  const [organizationSaving, setOrganizationSaving] = useState(false);
+  const [company_name, setCompany_name] = useState('');
+  const [address, setAddress] = useState('');
+  const [orgEmail, setOrgEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [currency, setCurrency] = useState('AUD');
+
+  const [users, setUsers] = useState<UserItem[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserPin, setNewUserPin] = useState('');
+  const [newUserRole, setNewUserRole] = useState<'admin' | 'staff'>('staff');
+  const [userSaving, setUserSaving] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editRole, setEditRole] = useState<'admin' | 'staff'>('staff');
+  const [editPin, setEditPin] = useState('');
+
+  const [showDisconnectModal, setShowDisconnectModal] = useState(false);
+  const [disconnectConfirmText, setDisconnectConfirmText] = useState('');
 
   // When landing with square_connected=1, show success and connected immediately (before user/fetch)
   useEffect(() => {
@@ -121,6 +156,166 @@ export default function SettingsPage() {
     setPsychologicalPricing(getPsychologicalPricingEnabled());
   }, []);
 
+  const fetchOrganization = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const res = await fetch(`/api/settings/organization?userId=${encodeURIComponent(user.id)}`);
+      const data = await res.json();
+      if (res.ok && data.id) {
+        setOrganization(data);
+        setCompany_name(data.company_name ?? '');
+        setAddress(data.address ?? '');
+        setOrgEmail(data.email ?? '');
+        setPhone(data.phone ?? '');
+        setCurrency(data.currency ?? 'AUD');
+      }
+    } catch {
+      // ignore
+    } finally {
+      setOrganizationLoading(false);
+    }
+  }, [user?.id]);
+
+  const fetchUsers = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const res = await fetch(`/api/users?userId=${encodeURIComponent(user.id)}`);
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.users)) setUsers(data.users);
+    } catch {
+      setUsers([]);
+    } finally {
+      setUsersLoading(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user?.role === 'admin') {
+      fetchOrganization();
+      fetchUsers();
+    } else {
+      setOrganizationLoading(false);
+      setUsersLoading(false);
+    }
+  }, [user?.role, user?.id, fetchOrganization, fetchUsers]);
+
+  const saveOrganization = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMessage(null);
+    setOrganizationSaving(true);
+    try {
+      const res = await fetch('/api/settings/organization', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user?.id,
+          company_name: company_name.trim(),
+          address: address.trim() || null,
+          email: orgEmail.trim() || null,
+          phone: phone.trim() || null,
+          currency: currency || 'AUD',
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setOrganization(data);
+        setMessage({ type: 'success', text: 'Company settings saved.' });
+      } else {
+        setMessage({ type: 'error', text: data.error ?? 'Failed to save' });
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to save' });
+    } finally {
+      setOrganizationSaving(false);
+    }
+  };
+
+  const createUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.id || !newUserName.trim() || newUserPin.length < 4) return;
+    setMessage(null);
+    setUserSaving(true);
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newUserName.trim(), pin: newUserPin, role: newUserRole, userId: user.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setUsers((prev) => [...prev, data.user]);
+        setNewUserName('');
+        setNewUserPin('');
+        setMessage({ type: 'success', text: 'User created.' });
+      } else {
+        setMessage({ type: 'error', text: data.error ?? 'Failed to create user' });
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to create user' });
+    } finally {
+      setUserSaving(false);
+    }
+  };
+
+  const updateUser = async (id: string) => {
+    if (!user?.id) return;
+    setMessage(null);
+    setUserSaving(true);
+    try {
+      const body: { name?: string; role?: string; pin?: string; userId: string } = { name: editName.trim(), role: editRole, userId: user.id };
+      if (editPin.length >= 4) body.pin = editPin;
+      const res = await fetch(`/api/users/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, name: data.name, role: data.role } : u)));
+        setEditingUserId(null);
+        setEditName('');
+        setEditRole('staff');
+        setEditPin('');
+        setMessage({ type: 'success', text: 'User updated.' });
+      } else {
+        setMessage({ type: 'error', text: data.error ?? 'Failed to update' });
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to update' });
+    } finally {
+      setUserSaving(false);
+    }
+  };
+
+  const deleteUser = async (id: string) => {
+    if (!user?.id) return;
+    if (!confirm('Remove this user? This cannot be undone.')) return;
+    setMessage(null);
+    setUserSaving(true);
+    try {
+      const res = await fetch(`/api/users/${id}?userId=${encodeURIComponent(user.id)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        setUsers((prev) => prev.filter((u) => u.id !== id));
+        setEditingUserId(null);
+        setMessage({ type: 'success', text: 'User removed.' });
+      } else {
+        setMessage({ type: 'error', text: data.error ?? 'Failed to remove user' });
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to remove user' });
+    } finally {
+      setUserSaving(false);
+    }
+  };
+
+  const startEditUser = (u: UserItem) => {
+    setEditingUserId(u.id);
+    setEditName(u.name ?? '');
+    setEditRole((u.role as 'admin' | 'staff') || 'staff');
+    setEditPin('');
+  };
+
   const saveInvoiceFormulas = async () => {
     if (!user?.id) return;
     setInvoiceFormulasSaving(true);
@@ -171,8 +366,8 @@ export default function SettingsPage() {
       setMessage({ type: 'error', text: 'PINs do not match' });
       return;
     }
-    if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
-      setMessage({ type: 'error', text: 'PIN must be 4 digits' });
+    if (newPin.length < 4 || newPin.length > 6 || !/^\d+$/.test(newPin)) {
+      setMessage({ type: 'error', text: 'PIN must be 4 to 6 digits' });
       return;
     }
     try {
@@ -245,6 +440,169 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {user?.role === 'admin' && (
+        <>
+          <Card title="Company">
+            {organizationLoading ? (
+              <div className="flex items-center gap-2 text-slate-500">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Loading…</span>
+              </div>
+            ) : (
+              <form onSubmit={saveOrganization} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Company name</label>
+                  <input
+                    type="text"
+                    value={company_name}
+                    onChange={(e) => setCompany_name(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Address</label>
+                  <input
+                    type="text"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={orgEmail}
+                    onChange={(e) => setOrgEmail(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Currency</label>
+                  <select
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none"
+                  >
+                    <option value="AUD">AUD</option>
+                    <option value="USD">USD</option>
+                    <option value="EUR">EUR</option>
+                    <option value="GBP">GBP</option>
+                  </select>
+                </div>
+                <Button type="submit" disabled={organizationSaving}>
+                  {organizationSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                  Save company
+                </Button>
+              </form>
+            )}
+          </Card>
+
+          <Card title="User management">
+            <p className="text-sm text-slate-600 mb-4">Create, edit, or remove user accounts. At least one admin must exist.</p>
+            {usersLoading ? (
+              <div className="flex items-center gap-2 text-slate-500">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Loading…</span>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <form onSubmit={createUser} className="flex flex-wrap gap-2 items-end">
+                  <input
+                    type="text"
+                    placeholder="Name"
+                    value={newUserName}
+                    onChange={(e) => setNewUserName(e.target.value)}
+                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm w-40"
+                  />
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="PIN (4–6 digits)"
+                    value={newUserPin}
+                    onChange={(e) => setNewUserPin(e.target.value.replace(/\D/g, ''))}
+                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm w-28"
+                  />
+                  <select
+                    value={newUserRole}
+                    onChange={(e) => setNewUserRole(e.target.value as 'admin' | 'staff')}
+                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm"
+                  >
+                    <option value="staff">Staff</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  <Button type="submit" size="sm" disabled={userSaving || !newUserName.trim() || newUserPin.length < 4}>
+                    {userSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                    <span className="ml-1">Add user</span>
+                  </Button>
+                </form>
+                <ul className="space-y-2">
+                  {users.map((u) => (
+                    <li key={u.id} className="flex flex-wrap items-center gap-2 py-2 border-b border-slate-100 last:border-0">
+                      {editingUserId === u.id ? (
+                        <>
+                          <input
+                            type="text"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            className="px-3 py-1.5 rounded border border-slate-200 text-sm w-40"
+                          />
+                          <select
+                            value={editRole}
+                            onChange={(e) => setEditRole(e.target.value as 'admin' | 'staff')}
+                            className="px-3 py-1.5 rounded border border-slate-200 text-sm"
+                          >
+                            <option value="staff">Staff</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                          <input
+                            type="password"
+                            inputMode="numeric"
+                            maxLength={6}
+                            placeholder="New PIN (optional)"
+                            value={editPin}
+                            onChange={(e) => setEditPin(e.target.value.replace(/\D/g, ''))}
+                            className="px-3 py-1.5 rounded border border-slate-200 text-sm w-28"
+                          />
+                          <Button size="sm" onClick={() => updateUser(u.id)} disabled={userSaving || !editName.trim()}>
+                            Save
+                          </Button>
+                          <Button size="sm" variant="secondary" onClick={() => { setEditingUserId(null); setEditPin(''); }}>
+                            Cancel
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-medium text-slate-800 w-40 truncate">{u.name || 'Unnamed'}</span>
+                          <span className="text-xs text-slate-500 capitalize">{u.role}</span>
+                          <Button size="sm" variant="secondary" onClick={() => startEditUser(u)} disabled={userSaving}>
+                            Edit
+                          </Button>
+                          <Button size="sm" variant="danger" onClick={() => deleteUser(u.id)} disabled={userSaving || (users.filter((x) => x.role === 'admin').length <= 1 && u.role === 'admin')}>
+                            Delete
+                          </Button>
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </Card>
+        </>
+      )}
+
       <Card title="Profile">
         <form onSubmit={handleUpdateName} className="space-y-4">
           <div>
@@ -267,7 +625,7 @@ export default function SettingsPage() {
             <input
               type="password"
               inputMode="numeric"
-              maxLength={4}
+              maxLength={6}
               value={currentPin}
               onChange={(e) => setCurrentPin(e.target.value.replace(/\D/g, ''))}
               placeholder="••••"
@@ -275,11 +633,11 @@ export default function SettingsPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">New PIN</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">New PIN (4–6 digits)</label>
             <input
               type="password"
               inputMode="numeric"
-              maxLength={4}
+              maxLength={6}
               value={newPin}
               onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))}
               placeholder="••••"
@@ -291,7 +649,7 @@ export default function SettingsPage() {
             <input
               type="password"
               inputMode="numeric"
-              maxLength={4}
+              maxLength={6}
               value={confirmPin}
               onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
               placeholder="••••"
@@ -463,6 +821,57 @@ export default function SettingsPage() {
           </div>
         )}
       </Card>
+
+      {user?.role === 'admin' && (
+        <Card title="Danger Zone" className="border-red-200 bg-red-50/30">
+          <p className="text-sm text-slate-600 mb-4">
+            Disconnect this application from the current organization. You will need to create or connect to an organization again to use the app.
+          </p>
+          <Button
+            variant="secondary"
+            onClick={() => { setShowDisconnectModal(true); setDisconnectConfirmText(''); }}
+            className="w-full sm:w-auto py-3 px-6 bg-red-600 hover:bg-red-700 text-white border-red-600 font-medium text-base"
+          >
+            Disconnect this organization
+          </Button>
+        </Card>
+      )}
+
+      {showDisconnectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowDisconnectModal(false)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 border border-slate-200" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-800 mb-2">Disconnect organization</h3>
+            <p className="text-sm text-slate-600 mb-4">
+              You are about to disconnect this application from the current organization.
+              This will remove the organization from this device and end all active sessions.
+              You will need to reconnect or configure a new organization to continue using the application.
+            </p>
+            <input
+              type="text"
+              value={disconnectConfirmText}
+              onChange={(e) => setDisconnectConfirmText(e.target.value)}
+              placeholder="Type confirm to confirm"
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none mb-4"
+            />
+            <div className="flex gap-3 justify-end">
+              <Button variant="secondary" onClick={() => { setShowDisconnectModal(false); setDisconnectConfirmText(''); }}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  clearOrganizationConnection();
+                  setShowDisconnectModal(false);
+                  logout();
+                }}
+                disabled={disconnectConfirmText.trim().toLowerCase() !== 'confirm'}
+                className="bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:pointer-events-none text-white"
+              >
+                Confirm
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
