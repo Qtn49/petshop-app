@@ -7,6 +7,7 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import CalculatorButton from '@/components/calculator/CalculatorButton';
 import FloatingCalculator from '@/components/calculator/FloatingCalculator';
+import SquareNotConnectedPopup from '@/components/SquareNotConnectedPopup';
 import { useSidebar } from '@/contexts/SidebarContext';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -50,6 +51,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <MobileNav />
       <CalculatorButton />
       <FloatingCalculator />
+      <SquareNotConnectedPopup />
     </div>
   );
 }
