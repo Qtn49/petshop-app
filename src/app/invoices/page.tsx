@@ -2,17 +2,21 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import Link from 'next/link';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { Upload, FileText, Loader2, X } from 'lucide-react';
+import { Upload, FileText, Loader2, X, ChevronRight } from 'lucide-react';
 
 const ACCEPTED_TYPES = '.pdf,.xlsx,.xls,.csv';
 const ACCEPTED_EXT = ['pdf', 'xlsx', 'xls', 'csv'];
+
+type InvoiceRow = { id: string; file_name: string; status: string; created_at: string };
 
 export default function InvoicesPage() {
   const { user } = useAuth();
 
   const [files, setFiles] = useState<File[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [isDragging, setIsDragging] = useState(false);
@@ -94,6 +98,14 @@ export default function InvoicesPage() {
       window.removeEventListener('drop', onDrop);
     };
   }, [addFiles]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    fetch(`/api/invoices?userId=${user.id}`)
+      .then((r) => r.json())
+      .then((d) => setInvoices(d.invoices || []))
+      .catch(() => setInvoices([]));
+  }, [user?.id]);
 
   const handleUpload = async () => {
     if (!files.length || !user?.id) return;
@@ -254,13 +266,35 @@ export default function InvoicesPage() {
           </div>
         </Card>
 
-        <Card title="Recent Invoices">
-          <a
-            href="/invoices/list"
-            className="text-primary-600 hover:underline"
-          >
-            View all invoices →
-          </a>
+        <Card title="Invoices">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm text-slate-600">Recent invoices</span>
+            <Link
+              href="/invoices/list"
+              className="text-primary-600 hover:text-primary-700 text-sm font-medium flex items-center gap-1"
+            >
+              View all
+              <ChevronRight className="w-4 h-4" />
+            </Link>
+          </div>
+          {invoices.length === 0 ? (
+            <p className="text-slate-500 text-sm">No invoices yet.</p>
+          ) : (
+            <ul className="space-y-1">
+              {invoices.slice(0, 8).map((inv) => (
+                <li key={inv.id}>
+                  <Link
+                    href={`/invoices/${inv.id}`}
+                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition"
+                  >
+                    <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                    <span className="text-sm truncate flex-1 min-w-0">{inv.file_name}</span>
+                    <span className="text-xs text-slate-500 shrink-0">{inv.status}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       </div>
     </>

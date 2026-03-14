@@ -62,3 +62,4 @@ function withPreMatchedFlags(
 export type { ParsedInvoiceItem, ParsedInvoiceResult } from './types';
 export { csvParser } from './csvParser';
 export { deterministicParse, preprocessInvoiceText, groupItemBlocks, parseItemBlock } from './deterministicParser';
+export { verifyParsedItemsWithAI, type VerifyResult } from './verifyWithAI';

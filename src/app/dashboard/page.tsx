@@ -2,17 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import Link from 'next/link';
 import DashboardCalendar from '@/components/dashboard/DashboardCalendar';
 import TodoList from '@/components/dashboard/TodoList';
 import SupplierLinks from '@/components/dashboard/SupplierLinks';
 import Notifications from '@/components/dashboard/Notifications';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, FileText, ChevronRight } from 'lucide-react';
+
+type InvoiceRow = { id: string; file_name: string; status: string; created_at: string };
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const [supplierLinks, setSupplierLinks] = useState<{ id: string; name: string; url: string }[]>([]);
   const [tasks, setTasks] = useState<{ id: string; title: string; completed: boolean }[]>([]);
   const [notifications, setNotifications] = useState<{ id: string; title: string; message: string | null; type: string; read: boolean }[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -43,11 +47,17 @@ export default function DashboardPage() {
 
     const fetchData = async () => {
       try {
-        const [linksRes, tasksRes, notifRes] = await Promise.all([
+        const [linksRes, tasksRes, notifRes, invoicesRes] = await Promise.all([
           fetch(`/api/suppliers?userId=${user.id}`),
           fetch(`/api/tasks?userId=${user.id}`),
           fetch(`/api/notifications?userId=${user.id}`),
+          fetch(`/api/invoices?userId=${user.id}`),
         ]);
+
+        if (invoicesRes.ok) {
+          const data = await invoicesRes.json();
+          setInvoices(data.invoices?.slice(0, 8) ?? []);
+        }
 
         if (linksRes.ok) {
           const data = await linksRes.json();
@@ -123,8 +133,42 @@ export default function DashboardPage() {
         </div>
 
         {/** Supplier Links - bottom right */}
-        <div className="lg:col-span-2 lg:row-span-1 min-h-0 overflow-auto">
+        <div className="lg:col-span-1 lg:row-span-1 min-h-0 overflow-auto">
           <SupplierLinks links={supplierLinks} userId={user?.id} />
+        </div>
+
+        {/** Recent Invoices */}
+        <div className="lg:col-span-1 lg:row-span-1 min-h-0 overflow-auto">
+          <div className="bg-white rounded-xl border border-slate-200 p-3 h-full flex flex-col">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="font-semibold text-slate-800 text-sm">Recent Invoices</h2>
+              <Link
+                href="/invoices/list"
+                className="text-primary-600 hover:text-primary-700 text-sm font-medium flex items-center gap-1"
+              >
+                View all
+                <ChevronRight className="w-4 h-4" />
+              </Link>
+            </div>
+            {invoices.length === 0 ? (
+              <p className="text-slate-500 text-sm">No invoices yet.</p>
+            ) : (
+              <ul className="space-y-1 flex-1 min-h-0 overflow-auto">
+                {invoices.map((inv) => (
+                  <li key={inv.id}>
+                    <Link
+                      href={`/invoices/${inv.id}`}
+                      className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 transition group"
+                    >
+                      <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                      <span className="text-sm truncate flex-1 min-w-0">{inv.file_name}</span>
+                      <span className="text-xs text-slate-500 shrink-0">{inv.status}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </div>
     </div>

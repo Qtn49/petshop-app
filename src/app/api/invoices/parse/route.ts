@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase-server';
 import { parseInvoiceText } from '@/lib/invoice/parseInvoice';
+import { verifyParsedItemsWithAI } from '@/lib/invoice/verifyWithAI';
 import { detectSupplierFromText } from '@/lib/invoice-learning/supplierDetection';
 import { preMatchBarcodes } from '@/lib/invoice-learning/preMatch';
 
@@ -66,13 +67,26 @@ export async function POST(request: Request) {
       .from('invoices')
       .select('*')
       .eq('id', invoiceId)
-      .eq('user_id', userId)
       .single();
 
     if (invError || !invoice) {
       console.log('❌ Invoice not found:', invError?.message || 'No invoice');
       console.log(sep + '\n');
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    }
+
+    const isOwner = invoice.user_id === userId;
+    if (!isOwner) {
+      const { data: currentUser } = await supabase.from('users').select('organization_id').eq('id', userId).single();
+      const { data: ownerUser } = await supabase.from('users').select('organization_id').eq('id', invoice.user_id).single();
+      const sameOrg =
+        currentUser?.organization_id &&
+        ownerUser?.organization_id &&
+        currentUser.organization_id === ownerUser.organization_id;
+      if (!sameOrg) {
+        console.log('❌ Invoice not found: access denied (different org)');
+        return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+      }
     }
 
     // Allow re-parse: remove existing items so we don't duplicate
@@ -121,6 +135,19 @@ export async function POST(request: Request) {
     if (items.length > 0) {
       console.log('📋 Parsed items:', JSON.stringify(items, null, 2));
       console.log(sep + '\n');
+
+      const verification = await verifyParsedItemsWithAI(rawText, items);
+      if (verification) {
+        if (verification.valid) {
+          console.log('✅ AI verification: passed');
+        } else {
+          console.log('⚠️ AI verification: issues found', verification.issues);
+          if (verification.missingItems?.length) {
+            console.log('   Missing items:', verification.missingItems);
+          }
+        }
+        console.log(sep + '\n');
+      }
     } else {
       console.log('⚠️ No items parsed (deterministic parser returned empty).');
       console.log(sep + '\n');

@@ -11,6 +11,7 @@ import type { ConfirmItem } from '@/lib/invoice-import/confirm-types';
 
 type InvoiceItem = {
   id?: string;
+  skn?: string;
   product_name: string;
   quantity: number;
   price?: number;
@@ -25,6 +26,7 @@ type CatalogItem = {
 };
 
 type MatchedItem = {
+  skn?: string;
   product_name: string;
   quantity: number;
   price?: number;
@@ -47,7 +49,7 @@ function toConfirmItem(item: MatchedItem): ConfirmItem {
     purchase_price: item.price != null ? Number(item.price) : null,
     retail_price: item.salePrice != null && !Number.isNaN(Number(item.salePrice)) ? Number(item.salePrice) : null,
     category: '',
-    sku: '',
+    sku: (item.skn ?? '').trim(),
     vendor: '',
     vendor_code: '',
     image: null,

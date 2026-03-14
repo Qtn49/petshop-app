@@ -267,7 +267,7 @@ export default function InvoiceDetailPage() {
   }, [id, user?.id]);
 
   const handleConfirm = async () => {
-    if (!user?.id || items.length === 0) return;
+    if (!user?.id || items.length === 0 || !id) return;
     setSaving(true);
     try {
       const res = await fetch(`/api/invoices/${id}?userId=${encodeURIComponent(user.id)}`, {

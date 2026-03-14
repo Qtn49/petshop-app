@@ -2,6 +2,41 @@ import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase-server';
 import { storeInvoiceLearning } from '@/lib/invoice-learning/storeLearning';
 
+async function getInvoiceWithAccess(
+  supabase: Awaited<ReturnType<typeof import('@/lib/supabase-server').getSupabaseClient>>,
+  invoiceId: string,
+  userId: string
+) {
+  const { data: invoice, error: invError } = await supabase
+    .from('invoices')
+    .select('*')
+    .eq('id', invoiceId)
+    .single();
+
+  if (invError || !invoice) return { invoice: null, error: 'Invoice not found' };
+
+  if (invoice.user_id === userId) return { invoice };
+
+  const { data: currentUser } = await supabase
+    .from('users')
+    .select('organization_id')
+    .eq('id', userId)
+    .single();
+  const { data: ownerUser } = await supabase
+    .from('users')
+    .select('organization_id')
+    .eq('id', invoice.user_id)
+    .single();
+
+  const sameOrg =
+    currentUser?.organization_id &&
+    ownerUser?.organization_id &&
+    currentUser.organization_id === ownerUser.organization_id;
+
+  if (!sameOrg) return { invoice: null, error: 'Invoice not found' };
+  return { invoice };
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -15,15 +50,9 @@ export async function GET(
     return NextResponse.json({ error: 'userId required' }, { status: 400 });
   }
 
-  const { data: invoice, error: invError } = await supabase
-    .from('invoices')
-    .select('*')
-    .eq('id', id)
-    .eq('user_id', userId)
-    .single();
-
-  if (invError || !invoice) {
-    return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+  const { invoice, error } = await getInvoiceWithAccess(supabase, id, userId);
+  if (!invoice) {
+    return NextResponse.json({ error: error || 'Invoice not found' }, { status: 404 });
   }
 
   const { data: items } = await supabase
@@ -78,16 +107,12 @@ export async function PATCH(
 
   const organizationId = (userRow as { organization_id?: string } | null)?.organization_id ?? null;
 
-  const { data: invoice, error: invError } = await supabase
-    .from('invoices')
-    .select('id, raw_text, ai_prediction_json')
-    .eq('id', id)
-    .eq('user_id', userId)
-    .single();
-
-  if (invError || !invoice) {
-    return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+  const { invoice, error } = await getInvoiceWithAccess(supabase, id, userId);
+  if (!invoice) {
+    return NextResponse.json({ error: error || 'Invoice not found' }, { status: 404 });
   }
+
+  const invoiceWithFields = invoice as { id: string; raw_text?: string; ai_prediction_json?: unknown };
 
   let body: {
     items?: Array<{ skn?: string; product_name: string; quantity: number; price?: number; calculated_price?: number | null }>;
@@ -119,12 +144,12 @@ export async function PATCH(
   }
 
   let learningSaved = false;
-  if (organizationId && invoice.raw_text && invoice.ai_prediction_json) {
+  if (organizationId && invoiceWithFields.raw_text && invoiceWithFields.ai_prediction_json) {
     const result = await storeInvoiceLearning(supabase, {
       organizationId,
       invoiceId: id,
-      rawText: invoice.raw_text,
-      aiPredictionJson: invoice.ai_prediction_json,
+      rawText: invoiceWithFields.raw_text,
+      aiPredictionJson: invoiceWithFields.ai_prediction_json,
       userCorrectedItems: items.map((i) => ({
         skn: (i.skn ?? '').trim() || undefined,
         product_name: i.product_name ?? '',
@@ -151,15 +176,9 @@ export async function DELETE(
     return NextResponse.json({ error: 'userId required' }, { status: 400 });
   }
 
-  const { data: invoice, error: invError } = await supabase
-    .from('invoices')
-    .select('id, file_path')
-    .eq('id', id)
-    .eq('user_id', userId)
-    .single();
-
-  if (invError || !invoice) {
-    return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+  const { invoice, error } = await getInvoiceWithAccess(supabase, id, userId);
+  if (!invoice) {
+    return NextResponse.json({ error: error || 'Invoice not found' }, { status: 404 });
   }
 
   if (invoice.file_path) {
@@ -171,7 +190,7 @@ export async function DELETE(
   }
 
   await supabase.from('invoice_items').delete().eq('invoice_id', id);
-  const { error: deleteError } = await supabase.from('invoices').delete().eq('id', id).eq('user_id', userId);
+  const { error: deleteError } = await supabase.from('invoices').delete().eq('id', id);
 
   if (deleteError) {
     return NextResponse.json({ error: deleteError.message }, { status: 500 });
