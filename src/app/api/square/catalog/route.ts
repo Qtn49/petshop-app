@@ -40,19 +40,25 @@ export async function GET(request: Request) {
     );
 
     const items =
-      result.objects?.map((obj) => ({
-        id: obj.id,
-        name: obj.itemData?.name,
-        variations: obj.itemData?.variations?.map((v) => {
-          const amount = v.itemVariationData?.priceMoney?.amount;
-          const price = amount != null ? Number(amount) / 100 : undefined;
-          return {
-            id: v.id,
-            name: v.itemVariationData?.name,
-            price,
-          };
-        }),
-      })) || [];
+      result.objects?.map((obj) => {
+        const itemData = obj.itemData as { name?: string; sku?: string; variations?: { id?: string; itemVariationData?: { name?: string; priceMoney?: { amount?: string | number }; sku?: string } }[] } | undefined;
+        return {
+          id: obj.id,
+          name: itemData?.name,
+          sku: itemData?.sku,
+          variations: itemData?.variations?.map((v) => {
+            const vdata = v?.itemVariationData;
+            const amount = vdata?.priceMoney?.amount;
+            const price = amount != null ? Number(amount) / 100 : undefined;
+            return {
+              id: v?.id,
+              name: vdata?.name,
+              price,
+              sku: vdata?.sku,
+            };
+          }),
+        };
+      }) || [];
 
     return NextResponse.json({ items });
   } catch (err) {

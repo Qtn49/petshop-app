@@ -19,6 +19,8 @@ export default function InvoiceConfirmPage() {
   const invoiceId = params.id as string;
   const [items, setItems] = useState<ConfirmItem[]>([]);
   const [squareCategories, setSquareCategories] = useState<string[]>([]);
+  const [squareItemFields, setSquareItemFields] = useState<{ id: string; name: string; optionValues?: { id: string; name: string }[] }[]>([]);
+  const [squareAutocomplete, setSquareAutocomplete] = useState<{ product_name: string[]; sku: string[] }>({ product_name: [], sku: [] });
   const [enabledFields, setEnabledFields] = useState<string[]>(['category', 'retail_price', 'sku', 'description', 'image']);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -52,23 +54,61 @@ export default function InvoiceConfirmPage() {
 
   useEffect(() => {
     if (!user?.id || items.length === 0) return;
-    fetch(`/api/square/catalog/categories?userId=${encodeURIComponent(user.id)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data.categories)) setSquareCategories(data.categories);
+    Promise.all([
+      fetch(`/api/square/catalog/categories?userId=${encodeURIComponent(user.id)}`).then((r) => r.json()),
+      fetch(`/api/square/catalog?userId=${encodeURIComponent(user.id)}`).then((r) => r.json()),
+    ])
+      .then(([categoriesData, catalogData]) => {
+        if (Array.isArray(categoriesData.categories)) setSquareCategories(categoriesData.categories);
+        if (catalogData?.items && Array.isArray(catalogData.items)) {
+          const names = new Set<string>();
+          const skus = new Set<string>();
+          for (const item of catalogData.items) {
+            if (item.name?.trim()) names.add(item.name.trim());
+            if (item.sku?.trim()) skus.add(item.sku.trim());
+            for (const v of item.variations ?? []) {
+              if (v?.sku?.trim()) skus.add(v.sku.trim());
+            }
+          }
+          setSquareAutocomplete({
+            product_name: Array.from(names).sort((a, b) => a.localeCompare(b)),
+            sku: Array.from(skus).sort((a, b) => a.localeCompare(b)),
+          });
+        }
       })
       .catch(() => {});
   }, [user?.id, items.length]);
 
+  const fetchEnabledFields = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const [fieldsRes, itemFieldsRes] = await Promise.all([
+        fetch(`/api/settings/invoice-new-item-fields?userId=${encodeURIComponent(user.id)}`, { cache: 'no-store' }),
+        fetch(`/api/square/catalog/item-fields?userId=${encodeURIComponent(user.id)}`, { cache: 'no-store' }),
+      ]);
+      const fieldsData = fieldsRes.ok ? await fieldsRes.json() : null;
+      const itemFieldsData = itemFieldsRes.ok ? await itemFieldsRes.json() : null;
+      if (fieldsData && Array.isArray(fieldsData.enabledFields)) {
+        setEnabledFields(fieldsData.enabledFields);
+      }
+      if (itemFieldsData?.fields && Array.isArray(itemFieldsData.fields)) {
+        setSquareItemFields(itemFieldsData.fields);
+      }
+    } catch {
+      // ignore
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    fetchEnabledFields();
+  }, [fetchEnabledFields]);
+
   useEffect(() => {
     if (!user?.id) return;
-    fetch(`/api/settings/invoice-new-item-fields?userId=${encodeURIComponent(user.id)}`, { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data && Array.isArray(data.enabledFields) && data.enabledFields.length > 0) setEnabledFields(data.enabledFields);
-      })
-      .catch(() => {});
-  }, [user?.id]);
+    const onFocus = () => fetchEnabledFields();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [user?.id, fetchEnabledFields]);
 
   const updateItem = useCallback((index: number, updates: Partial<ConfirmItem>) => {
     setItems((prev) => {
@@ -122,6 +162,9 @@ export default function InvoiceConfirmPage() {
     setError('');
 
     try {
+      if (typeof console !== 'undefined' && console.log) {
+        console.log('Submitting item draft (items):', includedItems.map((i) => ({ product_name: i.product_name, customAttributes: i.customAttributes })));
+      }
       const res = await fetch('/api/invoices/purchase-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -192,6 +235,8 @@ export default function InvoiceConfirmPage() {
                     disabled={submitting}
                     itemRef={(el) => { itemRefs.current[i] = el; }}
                     enabledFields={enabledFields}
+                    squareItemFields={squareItemFields}
+                    squareAutocomplete={squareAutocomplete}
                   />
                 )
             )}
@@ -216,6 +261,8 @@ export default function InvoiceConfirmPage() {
                     disabled={submitting}
                     itemRef={(el) => { itemRefs.current[i] = el; }}
                     enabledFields={enabledFields}
+                    squareItemFields={squareItemFields}
+                    squareAutocomplete={squareAutocomplete}
                   />
                 )
             )}

@@ -1,6 +1,6 @@
 -- Migration: Add day_tasks table (run if you already have the base schema)
 CREATE TABLE IF NOT EXISTS day_tasks (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   task_date DATE NOT NULL,
   title TEXT NOT NULL,

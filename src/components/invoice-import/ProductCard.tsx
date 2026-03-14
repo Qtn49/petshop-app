@@ -1,6 +1,6 @@
 'use client';
 
-import SquareItemField from './SquareItemField';
+import SquareItemField, { type SquareFieldMetadata } from './SquareItemField';
 import type { ConfirmItem, RequiredField } from '@/lib/invoice-import/confirm-types';
 import { OPTIONAL_NEW_ITEM_FIELDS } from '@/lib/invoice-import/confirm-types';
 
@@ -14,12 +14,17 @@ type Props = {
   itemRef?: (el: HTMLDivElement | null) => void;
   /** Optional field IDs to show (from settings). When null/empty, show all optional fields. */
   enabledFields?: string[] | null;
+  /** Square item fields metadata (for labels, optionValues for selects) */
+  squareItemFields?: SquareFieldMetadata[];
+  /** Per-field autocomplete values from Square catalog */
+  squareAutocomplete?: { product_name?: string[]; sku?: string[]; [key: string]: string[] | undefined };
 };
 
 const CORE_FIELDS = ['product_name', 'purchase_price', 'sku'];
 
+/** Only show optional fields that are enabled in Settings. When enabledFields is empty/undefined, fall back to default list. */
 function getFieldsToRender(enabledFields?: string[] | null): string[] {
-  const optional = Array.isArray(enabledFields) && enabledFields.length > 0 ? enabledFields : OPTIONAL_NEW_ITEM_FIELDS;
+  const optional = Array.isArray(enabledFields) ? enabledFields : OPTIONAL_NEW_ITEM_FIELDS;
   const seen = new Set<string>();
   const out: string[] = [];
   for (const f of [...CORE_FIELDS, ...optional]) {
@@ -32,7 +37,7 @@ function getFieldsToRender(enabledFields?: string[] | null): string[] {
   return out;
 }
 
-export default function ProductCard({ item, index, missingFields, onChange, squareCategories = [], disabled, itemRef, enabledFields }: Props) {
+export default function ProductCard({ item, index, missingFields, onChange, squareCategories = [], disabled, itemRef, enabledFields, squareItemFields = [], squareAutocomplete }: Props) {
   const update = (updates: Partial<ConfirmItem>) => onChange(index, updates);
   const includedInPO = item.includedInPO !== false;
 
@@ -42,6 +47,10 @@ export default function ProductCard({ item, index, missingFields, onChange, squa
   };
 
   const fieldsToRender = getFieldsToRender(enabledFields);
+  if (typeof console !== 'undefined' && console.log) {
+    console.log('Rendering item creation fields:', fieldsToRender);
+  }
+  const fieldMetaMap = Object.fromEntries((squareItemFields ?? []).map((f) => [f.id, f]));
 
   return (
     <div
@@ -68,6 +77,8 @@ export default function ProductCard({ item, index, missingFields, onChange, squa
             disabled={disabled}
             missing={missingFields.has(fieldKey as RequiredField)}
             squareCategories={squareCategories}
+            fieldMetadata={fieldMetaMap[fieldKey]}
+            squareAutocomplete={squareAutocomplete}
           />
         ))}
       </div>
@@ -77,6 +88,8 @@ export default function ProductCard({ item, index, missingFields, onChange, squa
           <SquareItemField
             field="image"
             item={item}
+            fieldMetadata={fieldMetaMap.image}
+            squareAutocomplete={squareAutocomplete}
             update={update}
             disabled={disabled}
             missing={missingFields.has('image')}

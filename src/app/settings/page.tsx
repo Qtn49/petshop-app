@@ -48,6 +48,7 @@ export default function SettingsPage() {
   const [invoiceFormulas, setInvoiceFormulas] = useState<FormulaRow[]>([]);
   const [invoiceFormulasLoading, setInvoiceFormulasLoading] = useState(true);
   const [invoiceFormulasSaving, setInvoiceFormulasSaving] = useState(false);
+  const [invoiceFieldsSaving, setInvoiceFieldsSaving] = useState(false);
   const [psychologicalPricing, setPsychologicalPricing] = useState(false);
 
   const [organization, setOrganization] = useState<Organization | null>(null);
@@ -135,10 +136,6 @@ export default function SettingsPage() {
       .then((data) => {
         if (Array.isArray(data.fields) && data.fields.length > 0) {
           setSquareItemFields(data.fields);
-          setInvoiceNewItemFields((prev) => {
-            if (prev.length <= 5) return data.fields.map((f: SquareItemField) => f.id);
-            return prev;
-          });
         }
       })
       .catch(() => {});
@@ -197,7 +194,7 @@ export default function SettingsPage() {
         setPhone(data.phone ?? '');
         setCurrency(data.currency ?? 'AUD');
         const arr = data.invoice_new_item_fields;
-        if (Array.isArray(arr) && arr.length > 0) setInvoiceNewItemFields(arr);
+        setInvoiceNewItemFields(Array.isArray(arr) && arr.length > 0 ? arr : ['category', 'retail_price', 'sku', 'description', 'image']);
       }
     } catch {
       // ignore
@@ -815,8 +812,8 @@ export default function SettingsPage() {
           {user?.role === 'admin' && squareItemFields.length > 0 && (
             <div className="mt-6 pt-4 border-t border-slate-200">
               <p className="text-sm font-medium text-slate-800 mb-2">Fields when creating a new product (Step 3)</p>
-              <p className="text-xs text-slate-600 mb-3">Select which fields to show on the confirm step. Saved with company settings below.</p>
-              <div className="flex flex-wrap gap-3">
+              <p className="text-xs text-slate-600 mb-3">Select which fields to show on the confirm step. Click Save to apply.</p>
+              <div className="flex flex-wrap gap-3 mb-3">
                 {squareItemFields.map((f) => (
                   <label key={f.id} className="inline-flex items-center gap-2 cursor-pointer">
                     <input
@@ -832,6 +829,39 @@ export default function SettingsPage() {
                   </label>
                 ))}
               </div>
+              <Button
+                type="button"
+                size="sm"
+                onClick={async () => {
+                  if (!user?.id) return;
+                  setInvoiceFieldsSaving(true);
+                  setMessage(null);
+                  try {
+                    const res = await fetch('/api/settings/organization', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        userId: user.id,
+                        invoice_new_item_fields: invoiceNewItemFields,
+                      }),
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                      setMessage({ type: 'success', text: 'Field selection saved.' });
+                    } else {
+                      setMessage({ type: 'error', text: data.error ?? 'Failed to save' });
+                    }
+                  } catch {
+                    setMessage({ type: 'error', text: 'Failed to save' });
+                  } finally {
+                    setInvoiceFieldsSaving(false);
+                  }
+                }}
+                disabled={invoiceFieldsSaving}
+              >
+                {invoiceFieldsSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                Save fields
+              </Button>
             </div>
           )}
         </div>

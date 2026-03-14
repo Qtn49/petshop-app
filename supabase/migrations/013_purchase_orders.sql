@@ -1,6 +1,6 @@
 -- Purchase orders (stored in app; Square does not expose a PO create API)
 CREATE TABLE IF NOT EXISTS purchase_orders (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   invoice_id UUID REFERENCES invoices(id) ON DELETE SET NULL,
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   vendor TEXT NOT NULL DEFAULT '',
@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
 );
 
 CREATE TABLE IF NOT EXISTS purchase_order_lines (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   purchase_order_id UUID NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
   product_name TEXT NOT NULL,
   sku TEXT,

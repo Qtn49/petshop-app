@@ -1,6 +1,6 @@
 -- Organization (company) for first-launch detection and settings
 CREATE TABLE IF NOT EXISTS organization (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   company_name TEXT NOT NULL,
   address TEXT,
   email TEXT,

@@ -9,6 +9,37 @@ import { getMissingFields } from '@/lib/invoice-import/confirm-types';
 
 type Body = { userId: string; invoiceId: string; items: ConfirmItem[]; enabledFields?: string[] };
 
+function buildExtraFields(it: ConfirmItem, enabledFields?: string[]): Record<string, unknown> {
+  const enabledSet = Array.isArray(enabledFields) ? new Set(enabledFields) : null;
+  const extra: Record<string, unknown> = {};
+  if (!enabledSet || enabledSet.has('retail_price')) {
+    if (it.retail_price != null && !Number.isNaN(it.retail_price)) extra.retail_price = it.retail_price;
+  }
+  if (!enabledSet || enabledSet.has('category')) {
+    if (it.category?.trim()) extra.category = it.category.trim();
+  }
+  if (!enabledSet || enabledSet.has('description')) {
+    if (it.description?.trim()) extra.description = it.description.trim();
+  }
+  if (!enabledSet || enabledSet.has('vendor')) {
+    if (it.vendor?.trim()) extra.vendor = it.vendor.trim();
+  }
+  if (!enabledSet || enabledSet.has('vendor_code')) {
+    if (it.vendor_code?.trim()) extra.vendor_code = it.vendor_code.trim();
+  }
+  if (!enabledSet || enabledSet.has('initial_stock')) {
+    if (it.initial_stock != null && !Number.isNaN(it.initial_stock)) extra.initial_stock = it.initial_stock;
+  }
+  if (it.customAttributes) {
+    for (const [key, val] of Object.entries(it.customAttributes)) {
+      if (val == null || String(val).trim() === '') continue;
+      if (enabledSet && !enabledSet.has(key)) continue;
+      extra[key] = String(val).trim();
+    }
+  }
+  return extra;
+}
+
 function parseDataUrl(dataUrl: string): { buffer: Buffer; mime: string; ext: string } | null {
   const match = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
   if (!match) return null;
@@ -43,15 +74,14 @@ export async function POST(request: Request) {
 
     const supabase = getSupabaseClient();
 
-    const { data: invoice } = await supabase
-      .from('invoices')
-      .select('id')
-      .eq('id', invoiceId)
-      .eq('user_id', userId)
-      .single();
-
-    if (!invoice) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    const { data: inv } = await supabase.from('invoices').select('id, user_id').eq('id', invoiceId).single();
+    if (!inv) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    const isOwner = inv.user_id === userId;
+    if (!isOwner) {
+      const { data: cu } = await supabase.from('users').select('organization_id').eq('id', userId).single();
+      const { data: ou } = await supabase.from('users').select('organization_id').eq('id', inv.user_id).single();
+      const sameOrg = cu?.organization_id && ou?.organization_id && cu.organization_id === ou.organization_id;
+      if (!sameOrg) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     }
 
     const { data: conn } = await supabase
@@ -86,28 +116,47 @@ export async function POST(request: Request) {
         continue;
       }
 
+      const extraFields = buildExtraFields(it, enabledFields);
+      if (typeof console !== 'undefined' && console.log) {
+        console.log('Building Square payload from:', { name, sku: it.sku, retailCents, extraFields, enabledFields });
+      }
+
+      const enabledSet = Array.isArray(enabledFields) ? new Set(enabledFields) : null;
+      const customAttrValues: Record<string, { stringValue?: string }> = {};
+      if (it.customAttributes) {
+        for (const [key, val] of Object.entries(it.customAttributes)) {
+          if (val == null || String(val).trim() === '') continue;
+          if (enabledSet && !enabledSet.has(key)) continue;
+          customAttrValues[key] = { stringValue: String(val).trim() };
+        }
+      }
+
       try {
+        const itemData: Record<string, unknown> = {
+          name,
+          ...(it.sku?.trim() && { sku: it.sku.trim() }),
+          ...(it.description?.trim() && { description: it.description.trim() }),
+          variations: [
+            {
+              type: 'ITEM_VARIATION',
+              id: varId,
+              itemVariationData: {
+                name: 'Default',
+                ...(retailCents > 0 && {
+                  priceMoney: { amount: BigInt(retailCents), currency: 'AUD' as const },
+                }),
+                ...(Object.keys(customAttrValues).length > 0 && { customAttributeValues: customAttrValues }),
+              },
+            },
+          ],
+        };
+
         const { result } = await client.catalogApi.upsertCatalogObject({
           idempotencyKey,
           object: {
             type: 'ITEM',
             id: itemId,
-            itemData: {
-              name,
-              ...(it.sku?.trim() && { sku: it.sku.trim() }),
-              variations: [
-                {
-                  type: 'ITEM_VARIATION',
-                  id: varId,
-                  itemVariationData: {
-                    name: 'Default',
-                    ...(retailCents > 0 && {
-                      priceMoney: { amount: BigInt(retailCents), currency: 'AUD' as const },
-                    }),
-                  },
-                },
-              ],
-            },
+            itemData,
           },
         });
 
@@ -181,6 +230,10 @@ export async function POST(request: Request) {
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       if (it.invoice_item_id) invoiceItemIds.push(it.invoice_item_id);
+      const extraFields = buildExtraFields(it, enabledFields);
+      if (typeof console !== 'undefined' && console.log) {
+        console.log('Persisting purchase order line extra_fields:', extraFields);
+      }
       await supabase.from('purchase_order_lines').insert({
         purchase_order_id: po.id,
         product_name: it.product_name,
@@ -190,6 +243,7 @@ export async function POST(request: Request) {
         catalog_item_id: catalogIds[i] ?? null,
         sort_order: i,
         invoice_item_id: it.invoice_item_id ?? null,
+        extra_fields: extraFields,
       });
     }
 

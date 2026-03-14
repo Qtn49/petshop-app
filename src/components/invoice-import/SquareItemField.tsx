@@ -23,6 +23,8 @@ function labelForKey(key: string): string {
   return FIELD_LABELS[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+export type SquareFieldMetadata = { id: string; name: string; optionValues?: { id: string; name: string }[] };
+
 type Props = {
   field: string;
   item: ConfirmItem;
@@ -32,6 +34,10 @@ type Props = {
   squareCategories?: string[];
   allImages?: string[];
   setAllImages?: (urls: string[]) => void;
+  /** Optional field metadata from Square (for label name and select/dropdown when optionValues present) */
+  fieldMetadata?: SquareFieldMetadata;
+  /** Per-field autocomplete values from Square catalog (e.g. product names, SKUs) */
+  squareAutocomplete?: { product_name?: string[]; sku?: string[]; [key: string]: string[] | undefined };
 };
 
 export default function SquareItemField({
@@ -43,8 +49,10 @@ export default function SquareItemField({
   squareCategories = [],
   allImages = [],
   setAllImages,
+  fieldMetadata,
+  squareAutocomplete,
 }: Props) {
-  const label = labelForKey(field);
+  const label = fieldMetadata?.name ?? labelForKey(field);
 
   if (field === 'category') {
     return (
@@ -145,34 +153,34 @@ export default function SquareItemField({
   }
 
   if (field === 'product_name') {
+    const options = squareAutocomplete?.product_name ?? [];
     return (
       <MissingFieldHighlight missing={!!missing}>
         <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
-        <input
-          type="text"
+        <CategoryCombobox
           value={item.product_name}
-          onChange={(e) => update({ product_name: e.target.value })}
+          onChange={(v) => update({ product_name: v })}
+          categories={options}
           disabled={disabled}
           placeholder="Product name"
-          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
-          autoComplete="on"
+          missing={!!missing}
         />
       </MissingFieldHighlight>
     );
   }
 
   if (field === 'sku') {
+    const options = squareAutocomplete?.sku ?? [];
     return (
       <MissingFieldHighlight missing={!!missing}>
         <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
-        <input
-          type="text"
+        <CategoryCombobox
           value={item.sku}
-          onChange={(e) => update({ sku: e.target.value })}
+          onChange={(v) => update({ sku: v })}
+          categories={options}
           disabled={disabled}
           placeholder="SKU"
-          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
-          autoComplete="on"
+          missing={!!missing}
         />
       </MissingFieldHighlight>
     );
@@ -191,39 +199,66 @@ export default function SquareItemField({
         : field === 'vendor'
           ? (v: string) => update({ vendor: v })
           : (v: string) => update({ vendor_code: v });
+    const options = squareAutocomplete?.[field] ?? [];
     return (
       <MissingFieldHighlight missing={!!missing}>
         <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
-        <input
-          type="text"
+        <CategoryCombobox
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={onChange}
+          categories={options}
           disabled={disabled}
           placeholder={label}
-          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
-          autoComplete="on"
+          missing={!!missing}
         />
       </MissingFieldHighlight>
     );
   }
 
-  // Custom attribute (Square custom key or item option)
+  // Dynamic optional field: Square custom attribute or item option
   const customValue = item.customAttributes?.[field] ?? '';
+  const options = fieldMetadata?.optionValues ?? [];
+
+  if (options.length > 0) {
+    return (
+      <MissingFieldHighlight missing={!!missing}>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+        <select
+          value={customValue}
+          onChange={(e) =>
+            update({
+              customAttributes: { ...(item.customAttributes ?? {}), [field]: e.target.value },
+            })
+          }
+          disabled={disabled}
+          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none bg-white"
+        >
+          <option value="">Select...</option>
+          {options.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name}
+            </option>
+          ))}
+        </select>
+      </MissingFieldHighlight>
+    );
+  }
+
+  const customOptions = options.length > 0 ? options.map((o) => o.name) : (squareAutocomplete?.[field] ?? []);
   return (
     <MissingFieldHighlight missing={!!missing}>
       <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
-      <input
-        type="text"
+      <CategoryCombobox
         value={customValue}
-        onChange={(e) =>
+        onChange={(v) =>
           update({
-            customAttributes: { ...(item.customAttributes ?? {}), [field]: e.target.value },
+            customAttributes: { ...(item.customAttributes ?? {}), [field]: v },
           })
         }
+        categories={customOptions}
         disabled={disabled}
         placeholder={label}
-        className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
-        autoComplete="on"
+        missing={!!missing}
       />
     </MissingFieldHighlight>
   );

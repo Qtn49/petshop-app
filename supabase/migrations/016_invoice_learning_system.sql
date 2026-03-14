@@ -1,7 +1,7 @@
 -- Invoice learning system: suppliers, invoice_history, supplier_products
 -- Suppliers (per organization, detected from invoice header)
 CREATE TABLE IF NOT EXISTS suppliers (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -14,7 +14,7 @@ ALTER TABLE invoices
   ADD COLUMN IF NOT EXISTS ai_prediction_json JSONB;
 
 CREATE TABLE IF NOT EXISTS invoice_history (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
   invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
   supplier_id UUID REFERENCES suppliers(id) ON DELETE SET NULL,
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS invoice_history (
 
 -- Learned product mappings per supplier
 CREATE TABLE IF NOT EXISTS supplier_products (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   supplier_id UUID NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
   supplier_product_name TEXT NOT NULL,
   barcode TEXT NOT NULL,
