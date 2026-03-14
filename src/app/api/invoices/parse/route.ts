@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase-server';
 import { parseInvoiceText } from '@/lib/invoice/parseInvoice';
 import { detectSupplierFromText } from '@/lib/invoice-learning/supplierDetection';
-import { preMatchBarcodes, getSupplierProducts } from '@/lib/invoice-learning/preMatch';
+import { preMatchBarcodes } from '@/lib/invoice-learning/preMatch';
 
 async function extractTextFromFile(
   supabase: Awaited<ReturnType<typeof getSupabaseClient>>,
@@ -109,23 +109,12 @@ export async function POST(request: Request) {
     }
 
     const supplierName = detectSupplierFromText(rawText);
-    const knownProducts =
-      organizationId && supplierName
-        ? (await getSupplierProducts(supabase, organizationId, supplierName)).map((p) => ({
-            barcode: p.barcode,
-            name: p.supplier_product_name,
-          }))
-        : [];
     const preMatched =
       organizationId && supplierName
         ? await preMatchBarcodes(supabase, organizationId, supplierName, rawText)
         : new Map<string, { name: string; square_variation_id: string | null }>();
     const preMatchedBarcodes = new Set(preMatched.keys());
-
-    const context =
-      knownProducts.length > 0 || preMatchedBarcodes.size > 0
-        ? { knownProducts, preMatchedBarcodes }
-        : undefined;
+    const context = preMatchedBarcodes.size > 0 ? { preMatchedBarcodes } : undefined;
 
     const { items } = await parseInvoiceText(rawText, context);
 
@@ -133,7 +122,7 @@ export async function POST(request: Request) {
       console.log('📋 Parsed items:', JSON.stringify(items, null, 2));
       console.log(sep + '\n');
     } else {
-      console.log('⚠️ No items parsed (regex and/or AI returned empty).');
+      console.log('⚠️ No items parsed (deterministic parser returned empty).');
       console.log(sep + '\n');
     }
 
