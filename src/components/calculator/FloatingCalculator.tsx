@@ -7,12 +7,13 @@ import { X } from 'lucide-react';
 type Operation = '+' | '-' | '×' | '÷' | null;
 
 export default function FloatingCalculator() {
-  const { isOpen, close } = useCalculator();
+  const { isOpen, close, history, addToHistory, clearHistory } = useCalculator();
   const [display, setDisplay] = useState('0');
   const [expression, setExpression] = useState('');
   const [previousValue, setPreviousValue] = useState<number | null>(null);
   const [operation, setOperation] = useState<Operation>(null);
   const [waitingForOperand, setWaitingForOperand] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   const inputDigit = useCallback(
     (digit: string) => {
@@ -104,11 +105,24 @@ export default function FloatingCalculator() {
 
   const handleEquals = useCallback(() => {
     if (operation) {
+      const inputValue = parseFloat(display);
+      if (previousValue !== null) {
+        let result = 0;
+        switch (operation) {
+          case '+': result = previousValue + inputValue; break;
+          case '-': result = previousValue - inputValue; break;
+          case '×': result = previousValue * inputValue; break;
+          case '÷': result = inputValue !== 0 ? previousValue / inputValue : 0; break;
+        }
+        const resultStr = String(result);
+        const expr = (expression || display).trim();
+        if (expr) addToHistory(expr, resultStr);
+      }
       performOperation(null);
       setOperation(null);
       setPreviousValue(null);
     }
-  }, [operation, performOperation]);
+  }, [operation, performOperation, display, previousValue, expression, addToHistory]);
 
   if (!isOpen) return null;
 
@@ -165,6 +179,36 @@ export default function FloatingCalculator() {
                 {btn.label}
               </button>
             ))}
+          </div>
+          <div className="mt-3 pt-3 border-t border-white/20">
+            <div className="flex items-center justify-between mb-2">
+              <button
+                type="button"
+                onClick={() => setShowHistory((v) => !v)}
+                className="text-white/70 text-sm hover:text-white"
+              >
+                {showHistory ? 'Hide history' : 'History'}
+              </button>
+              {history.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearHistory}
+                  className="text-white/50 text-xs hover:text-white/80"
+                >
+                  Clear history
+                </button>
+              )}
+            </div>
+            {showHistory && history.length > 0 && (
+              <div className="max-h-32 overflow-y-auto space-y-1 text-sm text-white/80">
+                {history.map((entry, i) => (
+                  <div key={i} className="flex justify-between gap-2">
+                    <span className="truncate">{entry.expression}</span>
+                    <span className="font-medium text-white shrink-0">= {entry.result}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

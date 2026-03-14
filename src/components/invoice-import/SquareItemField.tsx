@@ -1,0 +1,230 @@
+'use client';
+
+import MissingFieldHighlight from './MissingFieldHighlight';
+import ImageUploader from './ImageUploader';
+import CategoryCombobox from './CategoryCombobox';
+import { X } from 'lucide-react';
+import type { ConfirmItem } from '@/lib/invoice-import/confirm-types';
+
+const FIELD_LABELS: Record<string, string> = {
+  product_name: 'Product name',
+  purchase_price: 'Purchase price',
+  retail_price: 'Retail price',
+  category: 'Category',
+  sku: 'SKU',
+  description: 'Description',
+  vendor: 'Vendor',
+  vendor_code: 'Vendor code',
+  image: 'Images',
+  initial_stock: 'Initial stock level',
+};
+
+function labelForKey(key: string): string {
+  return FIELD_LABELS[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+type Props = {
+  field: string;
+  item: ConfirmItem;
+  update: (updates: Partial<ConfirmItem>) => void;
+  disabled?: boolean;
+  missing?: boolean;
+  squareCategories?: string[];
+  allImages?: string[];
+  setAllImages?: (urls: string[]) => void;
+};
+
+export default function SquareItemField({
+  field,
+  item,
+  update,
+  disabled,
+  missing,
+  squareCategories = [],
+  allImages = [],
+  setAllImages,
+}: Props) {
+  const label = labelForKey(field);
+
+  if (field === 'category') {
+    return (
+      <MissingFieldHighlight missing={!!missing}>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+        <CategoryCombobox
+          value={item.category}
+          onChange={(category) => update({ category })}
+          categories={squareCategories}
+          disabled={disabled}
+          placeholder="Type or pick a Square category"
+          missing={!!missing}
+        />
+      </MissingFieldHighlight>
+    );
+  }
+
+  if (field === 'image') {
+    return (
+      <MissingFieldHighlight missing={!!missing && allImages.length === 0}>
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+          <p className="text-xs text-slate-500 mb-1">Upload as many images as you want.</p>
+          {allImages.length > 0 && setAllImages && (
+            <div className="flex flex-wrap gap-2">
+              {allImages.map((url, idx) => (
+                <div key={idx} className="relative inline-block">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={url} alt="" className="h-20 w-20 object-cover rounded border border-slate-200" />
+                  {!disabled && (
+                    <button
+                      type="button"
+                      onClick={() => setAllImages(allImages.filter((_, i) => i !== idx))}
+                      className="absolute -top-1 -right-1 p-1 rounded-full bg-red-500 text-white hover:bg-red-600 text-xs"
+                      aria-label="Remove image"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {!disabled && setAllImages && (
+            <ImageUploader
+              value={null}
+              onChange={(dataUrl) => {
+                if (dataUrl) setAllImages([...allImages, dataUrl]);
+              }}
+              disabled={disabled}
+              missing={!!missing && allImages.length === 0}
+            />
+          )}
+        </div>
+      </MissingFieldHighlight>
+    );
+  }
+
+  if (field === 'retail_price' || field === 'purchase_price') {
+    return (
+      <MissingFieldHighlight missing={!!missing}>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+        <input
+          type="number"
+          min={0}
+          step={0.01}
+          value={field === 'retail_price' ? (item.retail_price ?? '') : (item.purchase_price ?? '')}
+          onChange={(e) => {
+            const v = e.target.value === '' ? null : Number(e.target.value);
+            update(field === 'retail_price' ? { retail_price: v } : { purchase_price: v });
+          }}
+          disabled={disabled}
+          placeholder="0.00"
+          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
+          autoComplete="on"
+        />
+      </MissingFieldHighlight>
+    );
+  }
+
+  if (field === 'initial_stock') {
+    return (
+      <MissingFieldHighlight missing={!!missing}>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+        <input
+          type="number"
+          min={0}
+          step={1}
+          value={item.initial_stock ?? ''}
+          onChange={(e) => update({ initial_stock: Number(e.target.value) || 0 })}
+          disabled={disabled}
+          placeholder="0"
+          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
+          autoComplete="on"
+        />
+      </MissingFieldHighlight>
+    );
+  }
+
+  if (field === 'product_name') {
+    return (
+      <MissingFieldHighlight missing={!!missing}>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+        <input
+          type="text"
+          value={item.product_name}
+          onChange={(e) => update({ product_name: e.target.value })}
+          disabled={disabled}
+          placeholder="Product name"
+          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
+          autoComplete="on"
+        />
+      </MissingFieldHighlight>
+    );
+  }
+
+  if (field === 'sku') {
+    return (
+      <MissingFieldHighlight missing={!!missing}>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+        <input
+          type="text"
+          value={item.sku}
+          onChange={(e) => update({ sku: e.target.value })}
+          disabled={disabled}
+          placeholder="SKU"
+          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
+          autoComplete="on"
+        />
+      </MissingFieldHighlight>
+    );
+  }
+
+  if (field === 'description' || field === 'vendor' || field === 'vendor_code') {
+    const value =
+      field === 'description'
+        ? item.description ?? ''
+        : field === 'vendor'
+          ? item.vendor ?? ''
+          : item.vendor_code ?? '';
+    const onChange =
+      field === 'description'
+        ? (v: string) => update({ description: v })
+        : field === 'vendor'
+          ? (v: string) => update({ vendor: v })
+          : (v: string) => update({ vendor_code: v });
+    return (
+      <MissingFieldHighlight missing={!!missing}>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          placeholder={label}
+          className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
+          autoComplete="on"
+        />
+      </MissingFieldHighlight>
+    );
+  }
+
+  // Custom attribute (Square custom key or item option)
+  const customValue = item.customAttributes?.[field] ?? '';
+  return (
+    <MissingFieldHighlight missing={!!missing}>
+      <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+      <input
+        type="text"
+        value={customValue}
+        onChange={(e) =>
+          update({
+            customAttributes: { ...(item.customAttributes ?? {}), [field]: e.target.value },
+          })
+        }
+        disabled={disabled}
+        placeholder={label}
+        className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
+        autoComplete="on"
+      />
+    </MissingFieldHighlight>
+  );
+}

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase-server';
 import { parseInvoiceText } from '@/lib/invoice/parseInvoice';
+import { detectSupplierFromText } from '@/lib/invoice-learning/supplierDetection';
+import { preMatchBarcodes, getSupplierProducts } from '@/lib/invoice-learning/preMatch';
 
 async function extractTextFromFile(
   supabase: Awaited<ReturnType<typeof getSupabaseClient>>,
@@ -52,6 +54,14 @@ export async function POST(request: Request) {
     console.log('📥 PARSE REQUEST — invoiceId:', invoiceId, 'userId:', userId);
     console.log(sep);
 
+    const { data: userRow } = await supabase
+      .from('users')
+      .select('organization_id')
+      .eq('id', userId)
+      .single();
+
+    const organizationId = (userRow as { organization_id?: string } | null)?.organization_id ?? null;
+
     const { data: invoice, error: invError } = await supabase
       .from('invoices')
       .select('*')
@@ -98,7 +108,26 @@ export async function POST(request: Request) {
       );
     }
 
-    const { items } = await parseInvoiceText(rawText);
+    const supplierName = detectSupplierFromText(rawText);
+    const knownProducts =
+      organizationId && supplierName
+        ? (await getSupplierProducts(supabase, organizationId, supplierName)).map((p) => ({
+            barcode: p.barcode,
+            name: p.supplier_product_name,
+          }))
+        : [];
+    const preMatched =
+      organizationId && supplierName
+        ? await preMatchBarcodes(supabase, organizationId, supplierName, rawText)
+        : new Map<string, { name: string; square_variation_id: string | null }>();
+    const preMatchedBarcodes = new Set(preMatched.keys());
+
+    const context =
+      knownProducts.length > 0 || preMatchedBarcodes.size > 0
+        ? { knownProducts, preMatchedBarcodes }
+        : undefined;
+
+    const { items } = await parseInvoiceText(rawText, context);
 
     if (items.length > 0) {
       console.log('📋 Parsed items:', JSON.stringify(items, null, 2));
@@ -108,6 +137,10 @@ export async function POST(request: Request) {
       console.log(sep + '\n');
     }
 
+    const aiPredictionJson = JSON.stringify(
+      items.map((i) => ({ code: i.code, name: i.name, quantity: i.quantity, price: i.price }))
+    );
+
     for (const item of items) {
       await supabase.from('invoice_items').insert({
         invoice_id: invoiceId,
@@ -116,12 +149,17 @@ export async function POST(request: Request) {
         quantity: item.quantity,
         price: item.price,
         status: 'pending',
+        matched_from_supplier_history: item.matchedFromHistory ?? false,
       });
     }
 
     await supabase
       .from('invoices')
-      .update({ status: 'parsed' })
+      .update({
+        status: 'parsed',
+        raw_text: rawText,
+        ai_prediction_json: aiPredictionJson as unknown,
+      })
       .eq('id', invoiceId);
 
     return NextResponse.json({
@@ -130,6 +168,7 @@ export async function POST(request: Request) {
         product_name: i.name,
         quantity: i.quantity,
         price: i.price,
+        matched_from_supplier_history: i.matchedFromHistory ?? false,
       })),
     });
   } catch (err) {

@@ -19,6 +19,7 @@ export default function InvoiceConfirmPage() {
   const invoiceId = params.id as string;
   const [items, setItems] = useState<ConfirmItem[]>([]);
   const [squareCategories, setSquareCategories] = useState<string[]>([]);
+  const [enabledFields, setEnabledFields] = useState<string[]>(['category', 'retail_price', 'sku', 'description', 'image']);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -41,7 +42,7 @@ export default function InvoiceConfirmPage() {
         router.replace(`/invoices/${invoiceId}/square`);
         return;
       }
-      setItems(parsed.map((i) => ({ ...i, includedInPO: i.includedInPO !== false })));
+      setItems(parsed.map((i) => ({ ...i, includedInPO: i.includedInPO !== false, images: i.images ?? [] })));
     } catch {
       router.replace(`/invoices/${invoiceId}/square`);
     } finally {
@@ -58,6 +59,16 @@ export default function InvoiceConfirmPage() {
       })
       .catch(() => {});
   }, [user?.id, items.length]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    fetch(`/api/settings/invoice-new-item-fields?userId=${encodeURIComponent(user.id)}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.enabledFields) && data.enabledFields.length > 0) setEnabledFields(data.enabledFields);
+      })
+      .catch(() => {});
+  }, [user?.id]);
 
   const updateItem = useCallback((index: number, updates: Partial<ConfirmItem>) => {
     setItems((prev) => {
@@ -76,11 +87,11 @@ export default function InvoiceConfirmPage() {
     const result: { index: number; fields: RequiredField[] }[] = [];
     items.forEach((item, index) => {
       if (item.includedInPO === false) return;
-      const fields = getMissingFields(item);
+      const fields = getMissingFields(item, enabledFields);
       if (fields.length) result.push({ index, fields });
     });
     return result;
-  }, [items]);
+  }, [items, enabledFields]);
 
   const totalCost = includedItems.reduce(
     (sum, i) => sum + (i.purchase_price != null && !Number.isNaN(i.purchase_price) ? i.purchase_price * i.quantity : 0),
@@ -118,6 +129,7 @@ export default function InvoiceConfirmPage() {
           userId: user.id,
           invoiceId,
           items: includedItems,
+          enabledFields,
         }),
       });
       const data = await res.json();
@@ -174,11 +186,12 @@ export default function InvoiceConfirmPage() {
                     key={i}
                     item={item}
                     index={i}
-                    missingFields={new Set(showValidation ? getMissingFields(item) : [])}
+                    missingFields={new Set(showValidation ? getMissingFields(item, enabledFields) : [])}
                     onChange={updateItem}
                     squareCategories={squareCategories}
                     disabled={submitting}
                     itemRef={(el) => { itemRefs.current[i] = el; }}
+                    enabledFields={enabledFields}
                   />
                 )
             )}
@@ -197,11 +210,12 @@ export default function InvoiceConfirmPage() {
                     key={i}
                     item={item}
                     index={i}
-                    missingFields={new Set(showValidation ? getMissingFields(item) : [])}
+                    missingFields={new Set(showValidation ? getMissingFields(item, enabledFields) : [])}
                     onChange={updateItem}
                     squareCategories={squareCategories}
                     disabled={submitting}
                     itemRef={(el) => { itemRefs.current[i] = el; }}
+                    enabledFields={enabledFields}
                   />
                 )
             )}

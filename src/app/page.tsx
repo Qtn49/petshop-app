@@ -7,6 +7,7 @@ import LoginForm from '@/components/auth/LoginForm';
 import InitialScreen from '@/components/auth/InitialScreen';
 import { Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import { getOrganizationConnected } from '@/lib/organization-connection';
+import { getAndClearReturnPathAfterOrg } from '@/lib/sessionReturnPath';
 
 const STATUS_TIMEOUT_MS = 15000;
 
@@ -57,7 +58,12 @@ export default function HomePage() {
       return;
     }
     if (!authLoading && user) {
-      router.replace('/dashboard');
+      const returnPath = getAndClearReturnPathAfterOrg();
+      if (returnPath && returnPath.startsWith('/')) {
+        router.replace(returnPath);
+      } else {
+        router.replace('/dashboard');
+      }
     }
   }, [orgConnected, onboardingChecked, configured, authLoading, user, router]);
 

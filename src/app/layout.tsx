@@ -3,6 +3,7 @@ import './globals.css';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { CalculatorProvider } from '@/contexts/CalculatorContext';
 import { SidebarProvider } from '@/contexts/SidebarContext';
+import SessionReturnTracker from '@/components/SessionReturnTracker';
 
 export const metadata: Metadata = {
   title: 'Pet Shop Manager',
@@ -19,7 +20,10 @@ export default function RootLayout({
       <body className="antialiased font-sans">
         <AuthProvider>
           <SidebarProvider>
-            <CalculatorProvider>{children}</CalculatorProvider>
+            <CalculatorProvider>
+            <SessionReturnTracker />
+            {children}
+          </CalculatorProvider>
           </SidebarProvider>
         </AuthProvider>
       </body>

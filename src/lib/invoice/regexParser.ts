@@ -1,9 +1,9 @@
 import type { ParsedInvoiceItem, ParsedInvoiceResult } from './types';
 
 /**
- * Lines that look like product lines: at least one digit then a dollar price (e.g. 4.33 or $4.33).
+ * Lines that look like product lines: digit(s) and a decimal price (e.g. 4.33, $4.33, or 101002.860).
  */
-const CANDIDATE_LINE_TEST = /\d+\s*\$?\s*\d+\.\d{2}/;
+const CANDIDATE_LINE_TEST = /\d+\.\d{2,3}\d*$|\d+\s*\$?\s*\d+\.\d{2}/;
 
 /**
  * Per-line regex: CODE + NAME + QUANTITY + $PRICE
@@ -11,6 +11,19 @@ const CANDIDATE_LINE_TEST = /\d+\s*\$?\s*\d+\.\d{2}/;
  * Groups: 1 = code (4-10), 2 = name, 3 = quantity, 4 = price.
  */
 const LINE_REGEX = /^([A-Z0-9]{4,10})([A-Z][A-Z0-9\s\-()]+?)(\d+)\$?(\d+\.\d{2})$/;
+
+/**
+ * Kong-style invoice: ITEM_CODE (4-6 digits) + DESCRIPTION + BARCODE (13 digits, often 9…) + QTY_BLOCK + PRICE (decimal)
+ * Example: 10321Scraper 4 In 1 24in  60cm9325136000511101002.860
+ * Groups: 1 = item code, 2 = description, 3 = barcode (SKU), 4 = qty block, 5 = price.
+ */
+const KONG_LINE_REGEX = /^(\d{4,6})(.+?)(9\d{12})(\d{2,6})(\d+\.\d{2})\d*$/;
+
+/**
+ * Kong continuation line (description on previous lines): BARCODE + QTY_BLOCK + PRICE at start.
+ * Example: 9325136082425220273.900
+ */
+const KONG_BARCODE_FIRST_REGEX = /^(9\d{12})(\d{2,3})(\d+\.\d{2})\d*$/;
 
 const INVALID_KEYWORDS = [
   'subtotal',
@@ -63,36 +76,107 @@ function filterItem(item: ParsedInvoiceItem): boolean {
 }
 
 /**
+ * Parse Kong-style line: barcode is SKU, first digit of qty block = quantity.
+ */
+function parseKongLine(m: RegExpMatchArray, nameOverride?: string): ParsedInvoiceItem | null {
+  const itemCode = (m[1] ?? '').trim();
+  const name = nameOverride ?? (m[2] ?? '').replace(/\s+/g, ' ').trim();
+  const barcode = (m[3] ?? '').trim();
+  const qtyBlock = (m[4] ?? '').trim();
+  const priceRaw = (m[5] ?? '0').replace(',', '.');
+  const price = parseFloat(priceRaw) || 0;
+
+  if (price <= 0) return null;
+  if (!nameOverride && name.length < 2) return null;
+
+  let quantity = 1;
+  if (qtyBlock.length >= 1) {
+    quantity = parseInt(qtyBlock[0], 10) || 1;
+    if (quantity <= 0 || quantity > 200) quantity = 1;
+  }
+
+  return {
+    code: barcode || itemCode || undefined,
+    name: name || 'Product',
+    quantity,
+    price,
+  };
+}
+
+/**
+ * Parse Kong line that starts with barcode (no description on this line).
+ */
+function parseKongBarcodeFirstLine(m: RegExpMatchArray): ParsedInvoiceItem | null {
+  const barcode = (m[1] ?? '').trim();
+  const qtyBlock = (m[2] ?? '').trim();
+  const priceRaw = (m[3] ?? '0').replace(',', '.');
+  const price = parseFloat(priceRaw) || 0;
+
+  if (price <= 0) return null;
+
+  let quantity = 1;
+  if (qtyBlock.length >= 1) {
+    quantity = parseInt(qtyBlock[0], 10) || 1;
+    if (quantity <= 0 || quantity > 200) quantity = 1;
+  }
+
+  return {
+    code: barcode || undefined,
+    name: 'Product',
+    quantity,
+    price,
+  };
+}
+
+/**
  * Line-based parser: split text into lines, keep only candidate product lines,
- * then parse each with a strict regex. Avoids broken line structure in raw PDF text.
+ * then parse each with LINE_REGEX or Kong-style KONG_LINE_REGEX.
  */
 export function regexParser(text: string): ParsedInvoiceResult {
   const candidateLines = getCandidateLines(text ?? '');
   const items: ParsedInvoiceItem[] = [];
 
   for (const line of candidateLines) {
-    const m = line.match(LINE_REGEX);
-    if (!m) continue;
+    const trimmed = line.trim();
+    if (!trimmed) continue;
 
-    let code = (m[1] ?? '').trim();
-    let name = (m[2] ?? '').replace(/\s+/g, ' ').trim();
-    const quantity = parseInt(m[3] ?? '0', 10) || 0;
-    const priceRaw = (m[4] ?? '0').replace(',', '.');
-    const price = parseFloat(priceRaw) || 0;
+    let item: ParsedInvoiceItem | null = null;
 
-    const repaired = repairCodeAndName(code, name);
-    code = repaired.code;
-    name = repaired.name;
+    const kongMatch = trimmed.match(KONG_LINE_REGEX);
+    if (kongMatch) {
+      item = parseKongLine(kongMatch);
+    }
+    if (!item && trimmed.match(KONG_BARCODE_FIRST_REGEX)) {
+      const barcodeFirst = trimmed.match(KONG_BARCODE_FIRST_REGEX);
+      if (barcodeFirst) item = parseKongBarcodeFirstLine(barcodeFirst);
+    }
 
-    console.log('Parsed line:', code, name);
+    if (!item) {
+      const m = trimmed.match(LINE_REGEX);
+      if (!m) continue;
 
-    const item: ParsedInvoiceItem = {
-      code: code || undefined,
-      name,
-      quantity,
-      price,
-    };
-    if (filterItem(item)) items.push(item);
+      let code = (m[1] ?? '').trim();
+      let name = (m[2] ?? '').replace(/\s+/g, ' ').trim();
+      const quantity = parseInt(m[3] ?? '0', 10) || 0;
+      const priceRaw = (m[4] ?? '0').replace(',', '.');
+      const price = parseFloat(priceRaw) || 0;
+
+      const repaired = repairCodeAndName(code, name);
+      code = repaired.code;
+      name = repaired.name;
+
+      item = {
+        code: code || undefined,
+        name,
+        quantity,
+        price,
+      };
+      if (!filterItem(item)) continue;
+    } else {
+      if (!filterItem(item)) continue;
+    }
+
+    items.push(item);
   }
 
   return { items };

@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { setOrganizationConnected } from '@/lib/organization-connection';
+import { setReturnPathAfterLogin } from '@/lib/sessionReturnPath';
 
 export type User = {
   id: string;
@@ -36,6 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logoutRef = useRef<() => void>(() => {});
 
   const logout = useCallback(() => {
+    setReturnPathAfterLogin();
     setUser(null);
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem(SESSION_STORAGE_KEY);

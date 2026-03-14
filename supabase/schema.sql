@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS organization (
   email TEXT,
   phone TEXT,
   currency TEXT NOT NULL DEFAULT 'AUD',
+  invoice_new_item_fields JSONB NOT NULL DEFAULT '["category","retail_price","sku","description","image"]'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase-server';
+import { storeInvoiceLearning } from '@/lib/invoice-learning/storeLearning';
 
 export async function GET(
   request: Request,
@@ -30,6 +31,16 @@ export async function GET(
     .select('*')
     .eq('invoice_id', id);
 
+  let supplierAccuracy: number | null = null;
+  if (invoice.raw_text) {
+    const { getSupplierAccuracy } = await import('@/lib/invoice-learning/supplierAccuracy');
+    const { data: userRow } = await supabase.from('users').select('organization_id').eq('id', userId).single();
+    const orgId = (userRow as { organization_id?: string } | null)?.organization_id ?? null;
+    if (orgId) {
+      supplierAccuracy = await getSupplierAccuracy(supabase, orgId, invoice.raw_text);
+    }
+  }
+
   return NextResponse.json({
     invoice,
     items: (items || []).map((i) => ({
@@ -40,7 +51,9 @@ export async function GET(
       price: i.price,
       calculated_price: i.calculated_price != null ? Number(i.calculated_price) : null,
       in_purchase_order: Boolean((i as { in_purchase_order?: boolean }).in_purchase_order),
+      matched_from_supplier_history: Boolean((i as { matched_from_supplier_history?: boolean }).matched_from_supplier_history),
     })),
+    supplier_accuracy: supplierAccuracy,
   });
 }
 
@@ -57,9 +70,17 @@ export async function PATCH(
     return NextResponse.json({ error: 'userId required' }, { status: 400 });
   }
 
+  const { data: userRow } = await supabase
+    .from('users')
+    .select('organization_id')
+    .eq('id', userId)
+    .single();
+
+  const organizationId = (userRow as { organization_id?: string } | null)?.organization_id ?? null;
+
   const { data: invoice, error: invError } = await supabase
     .from('invoices')
-    .select('id')
+    .select('id, raw_text, ai_prediction_json')
     .eq('id', id)
     .eq('user_id', userId)
     .single();
@@ -68,7 +89,9 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
   }
 
-  let body: { items?: Array<{ skn?: string; product_name: string; quantity: number; price?: number; calculated_price?: number | null }> };
+  let body: {
+    items?: Array<{ skn?: string; product_name: string; quantity: number; price?: number; calculated_price?: number | null }>;
+  };
   try {
     body = await request.json();
   } catch {
@@ -88,11 +111,31 @@ export async function PATCH(
       product_name: item.product_name ?? '',
       quantity: Number(item.quantity) || 1,
       price: item.price != null ? Number(item.price) : null,
-      calculated_price: item.calculated_price != null && !Number.isNaN(Number(item.calculated_price)) ? Number(item.calculated_price) : null,
+      calculated_price:
+        item.calculated_price != null && !Number.isNaN(Number(item.calculated_price))
+          ? Number(item.calculated_price)
+          : null,
     });
   }
 
-  return NextResponse.json({ success: true });
+  let learningSaved = false;
+  if (organizationId && invoice.raw_text && invoice.ai_prediction_json) {
+    const result = await storeInvoiceLearning(supabase, {
+      organizationId,
+      invoiceId: id,
+      rawText: invoice.raw_text,
+      aiPredictionJson: invoice.ai_prediction_json,
+      userCorrectedItems: items.map((i) => ({
+        skn: (i.skn ?? '').trim() || undefined,
+        product_name: i.product_name ?? '',
+        quantity: Number(i.quantity) || 1,
+        price: i.price != null ? Number(i.price) : undefined,
+      })),
+    });
+    learningSaved = result.learningSaved;
+  }
+
+  return NextResponse.json({ success: true, learningSaved });
 }
 
 export async function DELETE(

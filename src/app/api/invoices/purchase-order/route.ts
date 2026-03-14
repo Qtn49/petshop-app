@@ -7,7 +7,7 @@ import { Readable } from 'stream';
 import type { ConfirmItem } from '@/lib/invoice-import/confirm-types';
 import { getMissingFields } from '@/lib/invoice-import/confirm-types';
 
-type Body = { userId: string; invoiceId: string; items: ConfirmItem[] };
+type Body = { userId: string; invoiceId: string; items: ConfirmItem[]; enabledFields?: string[] };
 
 function parseDataUrl(dataUrl: string): { buffer: Buffer; mime: string; ext: string } | null {
   const match = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
@@ -22,7 +22,7 @@ function parseDataUrl(dataUrl: string): { buffer: Buffer; mime: string; ext: str
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Body;
-    const { userId, invoiceId, items } = body;
+    const { userId, invoiceId, items, enabledFields } = body;
 
     if (!userId || !invoiceId || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json(
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     }
 
     for (let i = 0; i < items.length; i++) {
-      const missing = getMissingFields(items[i]);
+      const missing = getMissingFields(items[i], enabledFields);
       if (missing.length > 0) {
         return NextResponse.json(
           { error: `Item ${i + 1}: missing required fields: ${missing.join(', ')}` },

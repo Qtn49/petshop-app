@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button';
 import { Link2, Loader2, Check, Plus, Trash2, Info, UserPlus } from 'lucide-react';
 import { getPsychologicalPricingEnabled, setPsychologicalPricingEnabled } from '@/lib/pricing/psychologicalPricing';
 import { clearOrganizationConnection } from '@/lib/organization-connection';
+import { setReturnPathAfterSquareConnect, getAndClearReturnPathAfterSquare, setReturnPathAfterOrgReconnect } from '@/lib/sessionReturnPath';
 
 type FormulaRow = { label: string; formula_percent: string };
 
@@ -17,7 +18,10 @@ type Organization = {
   email: string | null;
   phone: string | null;
   currency: string;
+  invoice_new_item_fields?: string[];
 };
+
+type SquareItemField = { id: string; name: string; optionValues?: { id: string; name: string }[] };
 
 type UserItem = { id: string; name: string | null; role: string };
 
@@ -54,6 +58,8 @@ export default function SettingsPage() {
   const [orgEmail, setOrgEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [currency, setCurrency] = useState('AUD');
+  const [squareItemFields, setSquareItemFields] = useState<SquareItemField[]>([]);
+  const [invoiceNewItemFields, setInvoiceNewItemFields] = useState<string[]>(['category', 'retail_price', 'sku', 'description', 'image']);
 
   const [users, setUsers] = useState<UserItem[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
@@ -69,12 +75,17 @@ export default function SettingsPage() {
   const [showDisconnectModal, setShowDisconnectModal] = useState(false);
   const [disconnectConfirmText, setDisconnectConfirmText] = useState('');
 
-  // When landing with square_connected=1, show success and connected immediately (before user/fetch)
+  // When landing with square_connected=1, show success and redirect to return path if set
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     if (params.get('square_connected') === '1') {
       setMessage({ type: 'success', text: 'Square account connected successfully.' });
+      const returnPath = getAndClearReturnPathAfterSquare();
+      if (returnPath && returnPath.startsWith('/') && returnPath !== '/settings') {
+        window.location.href = returnPath;
+        return;
+      }
       window.history.replaceState({}, '', '/settings');
       setSquareStatus((prev) => ({
         ...(prev ?? {}),
@@ -115,6 +126,23 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchSquareStatus();
   }, [fetchSquareStatus]);
+
+  // Fetch Square item fields for "new product fields" settings (when Square connected)
+  useEffect(() => {
+    if (!user?.id || !squareStatus?.connected) return;
+    fetch(`/api/square/catalog/item-fields?userId=${encodeURIComponent(user.id)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data.fields) && data.fields.length > 0) {
+          setSquareItemFields(data.fields);
+          setInvoiceNewItemFields((prev) => {
+            if (prev.length <= 5) return data.fields.map((f: SquareItemField) => f.id);
+            return prev;
+          });
+        }
+      })
+      .catch(() => {});
+  }, [user?.id, squareStatus?.connected]);
 
   // Refetch when returning to this tab so connection status stays in sync
   useEffect(() => {
@@ -168,6 +196,8 @@ export default function SettingsPage() {
         setOrgEmail(data.email ?? '');
         setPhone(data.phone ?? '');
         setCurrency(data.currency ?? 'AUD');
+        const arr = data.invoice_new_item_fields;
+        if (Array.isArray(arr) && arr.length > 0) setInvoiceNewItemFields(arr);
       }
     } catch {
       // ignore
@@ -214,6 +244,7 @@ export default function SettingsPage() {
           email: orgEmail.trim() || null,
           phone: phone.trim() || null,
           currency: currency || 'AUD',
+          invoice_new_item_fields: invoiceNewItemFields,
         }),
       });
       const data = await res.json();
@@ -401,6 +432,7 @@ export default function SettingsPage() {
 
   const handleDisconnectSquare = async () => {
     if (!user?.id) return;
+    setReturnPathAfterSquareConnect();
     setMessage(null);
     setSquareDisconnecting(true);
     try {
@@ -666,32 +698,47 @@ export default function SettingsPage() {
             <div className="flex items-start gap-2">
               <div>
                 <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
-                  Psychological pricing
+                  Round price
                   <span className="relative group inline-flex">
                     <Info className="w-4 h-4 text-slate-400 shrink-0" aria-hidden />
                     <span className="absolute left-0 top-full mt-1.5 px-3 py-2 w-72 text-xs font-normal text-slate-700 bg-white border border-slate-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity z-10 pointer-events-none">
-                      After your percentage markup is applied, prices are rounded down to feel cheaper to customers: under $10 or $10–$100 → X.99 (e.g. 16.80 → 15.99); $100 and above → X.95 (e.g. 129.40 → 128.95). Only rounds down, never up.
+                      After your percentage markup is applied, prices are rounded down: under $10 or $10–$100 → X.99 (e.g. 16.80 → 15.99); $100 and above → X.95 (e.g. 129.40 → 128.95). Only rounds down, never up.
                     </span>
                   </span>
                 </p>
                 <p className="text-xs text-slate-600 mt-0.5">
-                  When enabled, calculated prices are rounded down to .99 (under $100) or .95 ($100+) so they feel cheaper to customers. Default: off.
+                  When on, calculated prices are rounded down to .99 (under $100) or .95 ($100+). Default: off.
                 </p>
               </div>
             </div>
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={psychologicalPricing}
-                onChange={(e) => {
-                  const v = e.target.checked;
-                  setPsychologicalPricing(v);
-                  setPsychologicalPricingEnabled(v);
-                }}
-                className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-              />
-              <span className="text-sm text-slate-700">{psychologicalPricing ? 'On' : 'Off'}</span>
-            </label>
+            <div className="flex items-center gap-4">
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="roundPrice"
+                  checked={!psychologicalPricing}
+                  onChange={() => {
+                    setPsychologicalPricing(false);
+                    setPsychologicalPricingEnabled(false);
+                  }}
+                  className="w-4 h-4 border-slate-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-slate-700">Off</span>
+              </label>
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="roundPrice"
+                  checked={psychologicalPricing}
+                  onChange={() => {
+                    setPsychologicalPricing(true);
+                    setPsychologicalPricingEnabled(true);
+                  }}
+                  className="w-4 h-4 border-slate-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-slate-700">On</span>
+              </label>
+            </div>
           </div>
           <p className="text-sm text-slate-600">
             Calculated price formulas: label and formula in % only (e.g. <code className="bg-slate-100 px-1 rounded text-xs">100,10</code> = 100% then 10%).
@@ -765,6 +812,28 @@ export default function SettingsPage() {
               </div>
             </>
           )}
+          {user?.role === 'admin' && squareItemFields.length > 0 && (
+            <div className="mt-6 pt-4 border-t border-slate-200">
+              <p className="text-sm font-medium text-slate-800 mb-2">Fields when creating a new product (Step 3)</p>
+              <p className="text-xs text-slate-600 mb-3">Select which fields to show on the confirm step. Saved with company settings below.</p>
+              <div className="flex flex-wrap gap-3">
+                {squareItemFields.map((f) => (
+                  <label key={f.id} className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={invoiceNewItemFields.includes(f.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) setInvoiceNewItemFields((prev) => [...prev, f.id]);
+                        else setInvoiceNewItemFields((prev) => prev.filter((id) => id !== f.id));
+                      }}
+                      className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <span className="text-sm text-slate-700">{f.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </Card>
 
@@ -805,15 +874,17 @@ export default function SettingsPage() {
             <p className="text-sm text-slate-600">
               Connect your Square account to sync catalog and create purchase orders from invoices.
             </p>
-            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900">
-              <p className="font-medium mb-1">If you get a 400 error (Sandbox):</p>
-              <ol className="list-decimal list-inside space-y-1 text-amber-800">
-                <li>Open the <a href="https://developer.squareup.com/apps" target="_blank" rel="noopener noreferrer" className="underline">Square Developer Dashboard</a> in another tab.</li>
-                <li>Select <strong>Sandbox</strong>, open your app, and open the Sandbox seller dashboard (or log in to Sandbox).</li>
-                <li>Keep that tab open, then click &quot;Connect with Square&quot; below.</li>
-                <li>Ensure the <strong>Redirect URL</strong> in Square OAuth settings matches exactly: your callback URL with no trailing slash.</li>
-              </ol>
-            </div>
+            {process.env.NODE_ENV === 'development' && (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900">
+                <p className="font-medium mb-1">If you get a 400 error (Sandbox):</p>
+                <ol className="list-decimal list-inside space-y-1 text-amber-800">
+                  <li>Open the <a href="https://developer.squareup.com/apps" target="_blank" rel="noopener noreferrer" className="underline">Square Developer Dashboard</a> in another tab.</li>
+                  <li>Select <strong>Sandbox</strong>, open your app, and open the Sandbox seller dashboard (or log in to Sandbox).</li>
+                  <li>Keep that tab open, then click &quot;Connect with Square&quot; below.</li>
+                  <li>Ensure the <strong>Redirect URL</strong> in Square OAuth settings matches exactly: your callback URL with no trailing slash.</li>
+                </ol>
+              </div>
+            )}
             <Button onClick={handleConnectSquare}>
               <Link2 className="w-4 h-4 mr-2" />
               Connect with Square
@@ -859,6 +930,7 @@ export default function SettingsPage() {
               </Button>
               <Button
                 onClick={() => {
+                  setReturnPathAfterOrgReconnect();
                   clearOrganizationConnection();
                   setShowDisconnectModal(false);
                   logout();

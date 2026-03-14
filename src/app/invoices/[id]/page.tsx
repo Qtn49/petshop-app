@@ -1,11 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { Loader2, Check, AlertCircle, Pencil } from 'lucide-react';
+import { Loader2, Check, AlertCircle, Pencil, Sparkles } from 'lucide-react';
 import { formulaPercentToMultiplier } from '@/lib/invoice/formula';
 import { applyPsychologicalPricing, getPsychologicalPricingEnabled } from '@/lib/pricing/psychologicalPricing';
 
@@ -18,6 +18,7 @@ type ParsedItem = {
   price?: number;
   calculated_price?: number | null;
   formula?: string;
+  matched_from_supplier_history?: boolean;
 };
 
 type EditingCell = { index: number; field: 'skn' | 'name' | 'quantity' | 'calculated_price' } | null;
@@ -42,8 +43,12 @@ export default function InvoiceDetailPage() {
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<EditingCell>(null);
   const [editValue, setEditValue] = useState('');
+  const [editCursorPosition, setEditCursorPosition] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [formulaOptions, setFormulaOptions] = useState<FormulaOption[]>(DEFAULT_FORMULAS);
+  const [supplierAccuracy, setSupplierAccuracy] = useState<number | null>(null);
+  const [learningSavedMessage, setLearningSavedMessage] = useState(false);
+  const editInputRef = useRef<HTMLInputElement | null>(null);
 
   const id = params.id as string;
 
@@ -64,10 +69,20 @@ export default function InvoiceDetailPage() {
     });
   };
 
-  const startEdit = (index: number, field: 'skn' | 'name' | 'quantity' | 'calculated_price') => {
+  const getCaretOffsetFromClick = (e: React.MouseEvent): number => {
+    const doc = document as Document & { caretRangeFromPoint?(x: number, y: number): Range; caretPositionFromPoint?(x: number, y: number): { offset: number } };
+    const range = doc.caretRangeFromPoint?.(e.clientX, e.clientY);
+    if (range) return range.startOffset;
+    const pos = doc.caretPositionFromPoint?.(e.clientX, e.clientY);
+    if (pos) return pos.offset;
+    return 0;
+  };
+
+  const startEdit = (index: number, field: 'skn' | 'name' | 'quantity' | 'calculated_price', cursorPosition?: number | null) => {
     const item = items[index];
     if (!item) return;
     setEditing({ index, field });
+    setEditCursorPosition(cursorPosition ?? null);
     if (field === 'skn') setEditValue(item.skn ?? '');
     else if (field === 'name') setEditValue(item.product_name);
     else if (field === 'quantity') setEditValue(String(item.quantity));
@@ -125,7 +140,20 @@ export default function InvoiceDetailPage() {
   const cancelEdit = () => {
     setEditing(null);
     setEditValue('');
+    setEditCursorPosition(null);
   };
+
+  useEffect(() => {
+    if (editing == null || editCursorPosition == null || !editInputRef.current) return;
+    const input = editInputRef.current;
+    input.focus();
+    const type = input.type;
+    if (type === 'text' || type === 'search' || type === 'url' || type === 'tel' || type === 'password') {
+      const pos = Math.min(editCursorPosition, editValue.length);
+      input.setSelectionRange(pos, pos);
+    }
+    setEditCursorPosition(null);
+  }, [editing, editCursorPosition, editValue.length]);
 
   useEffect(() => {
     if (!id || !user?.id) {
@@ -155,10 +183,11 @@ export default function InvoiceDetailPage() {
         if (!invRes.ok) throw new Error(data.error || 'Failed to load');
 
         setInvoice(data.invoice);
+        setSupplierAccuracy(data.supplier_accuracy ?? null);
         const defaultMultiplier = options[0]?.multiplier ?? DEFAULT_FORMULAS[0].multiplier;
         const defaultFormulaId = options[0]?.id ?? 'custom';
         const usePsychological = getPsychologicalPricingEnabled();
-        const initialItems = (data.items || []).map((i: { skn?: string; product_name: string; quantity: number; price?: number; calculated_price?: number | null }) => {
+        const initialItems = (data.items || []).map((i: { skn?: string; product_name: string; quantity: number; price?: number; calculated_price?: number | null; matched_from_supplier_history?: boolean }) => {
           const price = i.price != null ? Number(i.price) : null;
           const hasCalc = i.calculated_price != null && !Number.isNaN(Number(i.calculated_price));
           let calculated_price = hasCalc ? Number(i.calculated_price) : (price != null && price > 0 ? Math.round(price * defaultMultiplier * 100) / 100 : null);
@@ -177,6 +206,7 @@ export default function InvoiceDetailPage() {
             price: i.price,
             calculated_price,
             formula,
+            matched_from_supplier_history: i.matched_from_supplier_history ?? false,
           };
         });
         setItems(initialItems);
@@ -190,7 +220,13 @@ export default function InvoiceDetailPage() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ invoiceId: id, userId: user.id }),
             });
-            const parseData = await parseRes.json();
+            const text = await parseRes.text();
+            let parseData: { items?: unknown[]; error?: string };
+            try {
+              parseData = text ? JSON.parse(text) : {};
+            } catch {
+              parseData = { error: parseRes.ok ? 'Invalid response' : 'Parsing failed' };
+            }
             if (parseRes.ok && parseData.items?.length) {
               const defaultMultiplier = options[0]?.multiplier ?? DEFAULT_FORMULAS[0].multiplier;
               const defaultFormulaId = options[0]?.id ?? 'custom';
@@ -208,6 +244,7 @@ export default function InvoiceDetailPage() {
                   price: i.price,
                   calculated_price,
                   formula: defaultFormulaId,
+                  matched_from_supplier_history: (i as { matched_from_supplier_history?: boolean }).matched_from_supplier_history ?? false,
                 };
               });
               setItems(parsedItems);
@@ -251,7 +288,13 @@ export default function InvoiceDetailPage() {
         setError(data.error || 'Failed to save items');
         return;
       }
-      router.push(`/invoices/${id}/square`);
+      const resData = await res.json().catch(() => ({}));
+      if (resData.learningSaved) {
+        setLearningSavedMessage(true);
+        setTimeout(() => router.push(`/invoices/${id}/square`), 1500);
+      } else {
+        router.push(`/invoices/${id}/square`);
+      }
     } catch {
       setError('Failed to save items');
     } finally {
@@ -269,7 +312,13 @@ export default function InvoiceDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ invoiceId: id, userId: user.id }),
       });
-      const parseData = await parseRes.json();
+      const text = await parseRes.text();
+      let parseData: { items?: unknown[]; error?: string };
+      try {
+        parseData = text ? JSON.parse(text) : {};
+      } catch {
+        parseData = { error: parseRes.ok ? 'Invalid response' : 'Parsing failed' };
+      }
       if (parseRes.ok && parseData.items?.length) {
         const defaultMultiplier = formulaOptions[0]?.multiplier ?? DEFAULT_FORMULAS[0].multiplier;
         const defaultFormulaId = formulaOptions[0]?.id ?? 'custom';
@@ -287,6 +336,7 @@ export default function InvoiceDetailPage() {
             price: i.price,
             calculated_price,
             formula: defaultFormulaId,
+            matched_from_supplier_history: (i as { matched_from_supplier_history?: boolean }).matched_from_supplier_history ?? false,
           };
         });
         setItems(parsedItems);
@@ -321,9 +371,26 @@ export default function InvoiceDetailPage() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-bold text-slate-800">Invoice: {invoice.file_name}</h1>
-        <p className="text-slate-500 mt-1">Review and confirm parsed items</p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Invoice: {invoice.file_name}</h1>
+          <p className="text-slate-500 mt-1">Review and confirm parsed items</p>
+          {supplierAccuracy != null && (
+            <p className="flex items-center gap-1.5 mt-2 text-sm text-emerald-600 font-medium">
+              <Sparkles className="w-4 h-4" />
+              AI accuracy for this supplier: {supplierAccuracy}%
+            </p>
+          )}
+          {learningSavedMessage && (
+            <p className="flex items-center gap-1.5 mt-2 text-sm text-emerald-600 font-medium animate-pulse">
+              <Check className="w-4 h-4" />
+              Learning saved for this supplier
+            </p>
+          )}
+        </div>
+        <Button variant="secondary" onClick={handleParseAgain} disabled={parsing}>
+          {parsing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Parsing…</> : 'Parse again'}
+        </Button>
       </header>
 
       {parsing ? (
@@ -339,12 +406,7 @@ export default function InvoiceDetailPage() {
             <p className="text-red-500 text-sm mb-4">{error}</p>
           )}
           {items.length === 0 ? (
-            <div className="space-y-3">
-              <p className="text-slate-500">No items could be extracted. Check the file or retry. Logs appear in the terminal where you run <code className="bg-slate-100 px-1 rounded">npm run dev</code>.</p>
-              <Button variant="secondary" onClick={handleParseAgain} disabled={parsing}>
-                {parsing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Parsing...</> : 'Parse again'}
-              </Button>
-            </div>
+            <p className="text-slate-500">No items could be extracted. Use <strong>Parse again</strong> above to re-run extraction on the invoice.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -364,6 +426,7 @@ export default function InvoiceDetailPage() {
                       <td className="py-3 text-slate-800">
                         {editing?.index === i && editing?.field === 'skn' ? (
                           <input
+                            ref={editInputRef}
                             type="text"
                             value={editValue}
                             onChange={(e) => setEditValue(e.target.value)}
@@ -373,11 +436,25 @@ export default function InvoiceDetailPage() {
                               if (e.key === 'Escape') cancelEdit();
                             }}
                             className="w-full max-w-[8rem] px-2 py-1 border border-slate-300 rounded focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                            autoComplete="on"
                             autoFocus
                           />
                         ) : (
                           <span className="flex items-center gap-2">
-                            {item.skn ?? '—'}
+                            <span
+                              className="cursor-text flex-1 min-w-0"
+                              onClick={(e) => startEdit(i, 'skn', getCaretOffsetFromClick(e))}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startEdit(i, 'skn'); } }}
+                            >
+                              {item.skn ?? '—'}
+                            </span>
+                            {item.matched_from_supplier_history && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 whitespace-nowrap">
+                                Matched from supplier history
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={() => startEdit(i, 'skn')}
@@ -392,6 +469,7 @@ export default function InvoiceDetailPage() {
                       <td className="py-3 text-slate-800">
                         {editing?.index === i && editing?.field === 'name' ? (
                           <input
+                            ref={editInputRef}
                             type="text"
                             value={editValue}
                             onChange={(e) => setEditValue(e.target.value)}
@@ -401,11 +479,20 @@ export default function InvoiceDetailPage() {
                               if (e.key === 'Escape') cancelEdit();
                             }}
                             className="w-full max-w-md px-2 py-1 border border-slate-300 rounded focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                            autoComplete="on"
                             autoFocus
                           />
                         ) : (
                           <span className="flex items-center gap-2">
-                            {item.product_name}
+                            <span
+                              className="cursor-text flex-1 min-w-0"
+                              onClick={(e) => startEdit(i, 'name', getCaretOffsetFromClick(e))}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startEdit(i, 'name'); } }}
+                            >
+                              {item.product_name}
+                            </span>
                             <button
                               type="button"
                               onClick={() => startEdit(i, 'name')}
@@ -420,6 +507,7 @@ export default function InvoiceDetailPage() {
                       <td className="py-3 text-slate-800">
                         {editing?.index === i && editing?.field === 'quantity' ? (
                           <input
+                            ref={editInputRef}
                             type="number"
                             min={1}
                             value={editValue}
@@ -430,11 +518,20 @@ export default function InvoiceDetailPage() {
                               if (e.key === 'Escape') cancelEdit();
                             }}
                             className="w-20 px-2 py-1 border border-slate-300 rounded focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                            autoComplete="on"
                             autoFocus
                           />
                         ) : (
                           <span className="flex items-center gap-2">
-                            {item.quantity}
+                            <span
+                              className="cursor-text"
+                              onClick={() => startEdit(i, 'quantity')}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startEdit(i, 'quantity'); } }}
+                            >
+                              {item.quantity}
+                            </span>
                             <button
                               type="button"
                               onClick={() => startEdit(i, 'quantity')}
@@ -470,6 +567,7 @@ export default function InvoiceDetailPage() {
                       <td className="py-3 text-slate-800">
                         {editing?.index === i && editing?.field === 'calculated_price' ? (
                           <input
+                            ref={editInputRef}
                             type="number"
                             min={0}
                             step={0.01}
@@ -481,11 +579,20 @@ export default function InvoiceDetailPage() {
                               if (e.key === 'Escape') cancelEdit();
                             }}
                             className="w-24 px-2 py-1 border border-slate-300 rounded focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                            autoComplete="on"
                             autoFocus
                           />
                         ) : (
                           <span className="flex items-center gap-2">
-                            {item.calculated_price != null ? `$${Number(item.calculated_price).toFixed(2)}` : '—'}
+                            <span
+                              className="cursor-text"
+                              onClick={() => startEdit(i, 'calculated_price')}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startEdit(i, 'calculated_price'); } }}
+                            >
+                              {item.calculated_price != null ? `$${Number(item.calculated_price).toFixed(2)}` : '—'}
+                            </span>
                             <button
                               type="button"
                               onClick={() => startEdit(i, 'calculated_price')}

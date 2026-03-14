@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase-server';
 
+const DEFAULT_NEW_ITEM_FIELDS = ['category', 'retail_price', 'sku', 'description', 'image'];
+
 type Body = {
   company_name?: string;
   address?: string;
   email?: string;
   phone?: string;
   currency?: string;
+  invoice_new_item_fields?: string[];
 };
 
 /** GET: Return the current user's organization (for settings). */
@@ -22,7 +25,7 @@ export async function GET(request: Request) {
 
     const { data, error } = await supabase
       .from('organization')
-      .select('id, company_name, address, email, phone, currency')
+      .select('id, company_name, address, email, phone, currency, invoice_new_item_fields')
       .eq('id', user.organization_id)
       .single();
 
@@ -53,6 +56,11 @@ export async function PATCH(request: Request) {
     if (body.email !== undefined) updates.email = (body.email ?? '').trim() || null;
     if (body.phone !== undefined) updates.phone = (body.phone ?? '').trim() || null;
     if (body.currency !== undefined) updates.currency = (body.currency ?? 'AUD').trim() || 'AUD';
+    if (body.invoice_new_item_fields !== undefined) {
+      updates.invoice_new_item_fields = Array.isArray(body.invoice_new_item_fields)
+        ? body.invoice_new_item_fields
+        : DEFAULT_NEW_ITEM_FIELDS;
+    }
 
     const { data, error } = await supabase
       .from('organization')

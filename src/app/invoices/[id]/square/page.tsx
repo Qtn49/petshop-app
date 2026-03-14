@@ -51,6 +51,7 @@ function toConfirmItem(item: MatchedItem): ConfirmItem {
     vendor: '',
     vendor_code: '',
     image: null,
+    images: [],
     initial_stock: item.quantity,
     status: item.status,
     catalogItemId: item.catalogItemId,
@@ -382,7 +383,7 @@ export default function InvoiceSquarePage() {
         </div>
 
         <div className="mt-6 flex gap-4">
-          <Button variant="secondary" onClick={() => router.back()}>
+          <Button variant="secondary" onClick={() => router.push(`/invoices/${invoiceId}`)}>
             Back
           </Button>
           <Button
