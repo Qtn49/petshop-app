@@ -68,7 +68,7 @@ export async function GET(request: Request) {
 
     const categoryNames = new Set<string>();
     // Add all Square categories (not just those assigned to items)
-    for (const name of categoryIdToName.values()) categoryNames.add(name);
+    Array.from(categoryIdToName.values()).forEach((name) => categoryNames.add(name));
     do {
       const { result } = await client.catalogApi.listCatalog(cursor, 'ITEM');
       for (const obj of result.objects ?? []) {
