@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase-server';
 import { getSquareEnvironment } from '@/lib/integrations/square/squareOAuth';
-import { OPTIONAL_FIELDS_DEFAULT_VALUES } from '@/lib/invoice-import/confirm-types';
 import { Client, Environment } from 'square';
 
 export type SquareItemField = {
@@ -74,12 +73,6 @@ export async function GET(request: Request) {
   } catch {
     // Return built-in only if Square catalog listing fails
   }
-
-  const defaults: Record<string, unknown> = { ...OPTIONAL_FIELDS_DEFAULT_VALUES };
-  for (const f of fields) {
-    if (!(f.id in defaults)) defaults[f.id] = '';
-  }
-  console.log('Optional fields and default values:', JSON.stringify(Object.entries(defaults).map(([field, defaultVal]) => ({ field, default: defaultVal })), null, 2));
 
   return NextResponse.json({ fields });
 }

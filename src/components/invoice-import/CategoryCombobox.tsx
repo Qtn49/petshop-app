@@ -85,6 +85,7 @@ export default function CategoryCombobox({
               <li
                 key={cat}
                 role="option"
+                aria-selected={cat === value}
                 tabIndex={0}
                 onClick={() => handleSelect(cat)}
                 onKeyDown={(e) => {
