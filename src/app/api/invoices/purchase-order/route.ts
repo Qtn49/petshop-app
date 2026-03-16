@@ -214,7 +214,7 @@ export async function POST(request: Request) {
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       if (it.invoice_item_id) invoiceItemIds.push(it.invoice_item_id);
-      const extraFields = buildExtraFields(it, enabledFields);
+      const extraFields = buildExtraFields(it);
       if (typeof console !== 'undefined' && console.log) {
         console.log('Persisting purchase order line extra_fields:', extraFields);
       }
