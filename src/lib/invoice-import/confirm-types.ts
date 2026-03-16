@@ -42,35 +42,22 @@ export const REQUIRED_FIELDS = [
 
 export type RequiredField = (typeof REQUIRED_FIELDS)[number];
 
-/** Optional fields that can be toggled in settings (Step 3). When disabled, they are not shown or required. */
-export const OPTIONAL_NEW_ITEM_FIELDS: string[] = [
-  'category',
-  'retail_price',
-  'sku',
-  'description',
-  'image',
-  'vendor',
-  'vendor_code',
-  'initial_stock',
-];
-
 export function isRequiredField(key: string): key is RequiredField {
   return (REQUIRED_FIELDS as readonly string[]).includes(key);
 }
 
-/** Returns which required fields are missing. Core: product_name, purchase_price, sku. Optional only when in enabledFields. Image required for new products when 'image' in enabledFields. */
-export function getMissingFields(item: ConfirmItem, enabledFields?: string[] | null): RequiredField[] {
+/** Returns which required fields are missing. All fields in REQUIRED_FIELDS are always required. */
+export function getMissingFields(item: ConfirmItem): RequiredField[] {
   const missing: RequiredField[] = [];
   if (!item.product_name?.trim()) missing.push('product_name');
   if (item.purchase_price == null || Number.isNaN(item.purchase_price) || item.purchase_price < 0) missing.push('purchase_price');
   if (!item.sku?.trim()) missing.push('sku');
-  const optional = Array.isArray(enabledFields) && enabledFields.length > 0 ? enabledFields : OPTIONAL_NEW_ITEM_FIELDS;
-  if (optional.includes('retail_price') && (item.retail_price == null || Number.isNaN(item.retail_price) || item.retail_price < 0)) missing.push('retail_price');
-  if (optional.includes('category') && !item.category?.trim()) missing.push('category');
-  if (optional.includes('vendor') && !item.vendor?.trim()) missing.push('vendor');
-  if (optional.includes('vendor_code') && !item.vendor_code?.trim()) missing.push('vendor_code');
-  if (optional.includes('initial_stock') && (item.initial_stock == null || Number.isNaN(item.initial_stock) || item.initial_stock < 0)) missing.push('initial_stock');
-  if (optional.includes('image') && item.status === 'unmatched') {
+  if (item.retail_price == null || Number.isNaN(item.retail_price) || item.retail_price < 0) missing.push('retail_price');
+  if (!item.category?.trim()) missing.push('category');
+  if (!item.vendor?.trim()) missing.push('vendor');
+  if (!item.vendor_code?.trim()) missing.push('vendor_code');
+  if (item.initial_stock == null || Number.isNaN(item.initial_stock) || item.initial_stock < 0) missing.push('initial_stock');
+  if (item.status === 'unmatched') {
     const hasImage = item.image?.trim() || (item.images?.length ?? 0) > 0;
     if (!hasImage) missing.push('image');
   }

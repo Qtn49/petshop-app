@@ -34,19 +34,55 @@ export async function GET(request: Request) {
   });
 
   try {
-    const { result } = await client.catalogApi.listCatalog(
-      undefined,
-      'ITEM'
-    );
+    const categoryIdToName = new Map<string, string>();
+    let catCursor: string | undefined;
+    do {
+      const { result } = await client.catalogApi.listCatalog(catCursor, 'CATEGORY');
+      for (const obj of result.objects ?? []) {
+        const id = (obj as { id?: string }).id;
+        const name = (obj as { categoryData?: { name?: string } }).categoryData?.name?.trim();
+        if (id && name) categoryIdToName.set(id, name);
+      }
+      catCursor = result.cursor ?? undefined;
+    } while (catCursor);
 
+    const getCustom = (obj: { customAttributeValues?: Record<string, { stringValue?: string; numberValue?: string }> }, key: string): string => {
+      const vals = obj.customAttributeValues;
+      if (!vals) return '';
+      for (const [k, v] of Object.entries(vals)) {
+        if (k.toLowerCase().replace(/[- ]/g, '_') === key) {
+          const s = v?.stringValue ?? (v?.numberValue != null ? String(v.numberValue) : '');
+          return (s ?? '').trim();
+        }
+      }
+      return '';
+    };
+
+    const { result } = await client.catalogApi.listCatalog(undefined, 'ITEM');
     const items =
       result.objects?.map((obj) => {
-        const itemData = obj.itemData as { name?: string; sku?: string; variations?: { id?: string; itemVariationData?: { name?: string; priceMoney?: { amount?: string | number }; sku?: string } }[] } | undefined;
+        const itemData = obj.itemData as { name?: string; sku?: string; category_id?: string; categories?: { id?: string }[]; variations?: { id?: string; itemVariationData?: { name?: string; priceMoney?: { amount?: string | number }; sku?: string } }[] } | undefined;
+        const catId = itemData?.category_id;
+        const cats = itemData?.categories;
+        let category = '';
+        if (catId) category = categoryIdToName.get(catId) ?? '';
+        if (!category && Array.isArray(cats)) {
+          for (const c of cats) {
+            const n = categoryIdToName.get(c.id ?? '');
+            if (n) { category = n; break; }
+          }
+        }
+        const o = obj as { customAttributeValues?: Record<string, { stringValue?: string; numberValue?: string }> };
+        const vendor = getCustom(o, 'vendor') || '';
+        const vendor_code = getCustom(o, 'vendor_code') || getCustom(o, 'supplier_code') || '';
         return {
-          id: obj.id,
+          id: (obj as { id?: string }).id,
           name: itemData?.name,
           sku: itemData?.sku,
-          variations: itemData?.variations?.map((v) => {
+          category: category || undefined,
+          vendor: vendor || undefined,
+          vendor_code: vendor_code || undefined,
+          variations: itemData?.variations?.map((v: { id?: string; itemVariationData?: { name?: string; priceMoney?: { amount?: string | number }; sku?: string } }) => {
             const vdata = v?.itemVariationData;
             const amount = vdata?.priceMoney?.amount;
             const price = amount != null ? Number(amount) / 100 : undefined;

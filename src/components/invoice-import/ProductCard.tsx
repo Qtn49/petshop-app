@@ -2,7 +2,6 @@
 
 import SquareItemField, { type SquareFieldMetadata } from './SquareItemField';
 import type { ConfirmItem, RequiredField } from '@/lib/invoice-import/confirm-types';
-import { OPTIONAL_NEW_ITEM_FIELDS } from '@/lib/invoice-import/confirm-types';
 
 type Props = {
   item: ConfirmItem;
@@ -12,32 +11,26 @@ type Props = {
   squareCategories?: string[];
   disabled?: boolean;
   itemRef?: (el: HTMLDivElement | null) => void;
-  /** Optional field IDs to show (from settings). When null/empty, show all optional fields. */
-  enabledFields?: string[] | null;
   /** Square item fields metadata (for labels, optionValues for selects) */
   squareItemFields?: SquareFieldMetadata[];
   /** Per-field autocomplete values from Square catalog */
   squareAutocomplete?: { product_name?: string[]; sku?: string[]; [key: string]: string[] | undefined };
 };
 
-const CORE_FIELDS = ['product_name', 'purchase_price', 'sku'];
+const FIELDS_TO_RENDER = [
+  'product_name',
+  'purchase_price',
+  'retail_price',
+  'category',
+  'sku',
+  'description',
+  'vendor',
+  'vendor_code',
+  'initial_stock',
+  'image',
+] as const;
 
-/** Only show optional fields that are enabled in Settings. When enabledFields is empty/undefined, fall back to default list. */
-function getFieldsToRender(enabledFields?: string[] | null): string[] {
-  const optional = Array.isArray(enabledFields) ? enabledFields : OPTIONAL_NEW_ITEM_FIELDS;
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const f of [...CORE_FIELDS, ...optional]) {
-    const key = f === 'name' ? 'product_name' : f;
-    if (!seen.has(key)) {
-      seen.add(key);
-      out.push(key);
-    }
-  }
-  return out;
-}
-
-export default function ProductCard({ item, index, missingFields, onChange, squareCategories = [], disabled, itemRef, enabledFields, squareItemFields = [], squareAutocomplete }: Props) {
+export default function ProductCard({ item, index, missingFields, onChange, squareCategories = [], disabled, itemRef, squareItemFields = [], squareAutocomplete }: Props) {
   const update = (updates: Partial<ConfirmItem>) => onChange(index, updates);
   const includedInPO = item.includedInPO !== false;
 
@@ -46,10 +39,7 @@ export default function ProductCard({ item, index, missingFields, onChange, squa
     update({ image: urls[0] ?? null, images: urls.slice(1) });
   };
 
-  const fieldsToRender = getFieldsToRender(enabledFields);
-  if (typeof console !== 'undefined' && console.log) {
-    console.log('Rendering item creation fields:', fieldsToRender);
-  }
+  const fieldsToRender = FIELDS_TO_RENDER;
   const fieldMetaMap = Object.fromEntries((squareItemFields ?? []).map((f) => [f.id, f]));
 
   return (

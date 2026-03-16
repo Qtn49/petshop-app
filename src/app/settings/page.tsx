@@ -60,7 +60,6 @@ export default function SettingsPage() {
   const [phone, setPhone] = useState('');
   const [currency, setCurrency] = useState('AUD');
   const [squareItemFields, setSquareItemFields] = useState<SquareItemField[]>([]);
-  const [invoiceNewItemFields, setInvoiceNewItemFields] = useState<string[]>(['category', 'retail_price', 'sku', 'description', 'image']);
 
   const [users, setUsers] = useState<UserItem[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
@@ -808,61 +807,6 @@ export default function SettingsPage() {
                 </Button>
               </div>
             </>
-          )}
-          {user?.role === 'admin' && squareItemFields.length > 0 && (
-            <div className="mt-6 pt-4 border-t border-slate-200">
-              <p className="text-sm font-medium text-slate-800 mb-2">Fields when creating a new product (Step 3)</p>
-              <p className="text-xs text-slate-600 mb-3">Select which fields to show on the confirm step. Click Save to apply.</p>
-              <div className="flex flex-wrap gap-3 mb-3">
-                {squareItemFields.map((f) => (
-                  <label key={f.id} className="inline-flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={invoiceNewItemFields.includes(f.id)}
-                      onChange={(e) => {
-                        if (e.target.checked) setInvoiceNewItemFields((prev) => [...prev, f.id]);
-                        else setInvoiceNewItemFields((prev) => prev.filter((id) => id !== f.id));
-                      }}
-                      className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
-                    />
-                    <span className="text-sm text-slate-700">{f.name}</span>
-                  </label>
-                ))}
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                onClick={async () => {
-                  if (!user?.id) return;
-                  setInvoiceFieldsSaving(true);
-                  setMessage(null);
-                  try {
-                    const res = await fetch('/api/settings/organization', {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        userId: user.id,
-                        invoice_new_item_fields: invoiceNewItemFields,
-                      }),
-                    });
-                    const data = await res.json();
-                    if (res.ok) {
-                      setMessage({ type: 'success', text: 'Field selection saved.' });
-                    } else {
-                      setMessage({ type: 'error', text: data.error ?? 'Failed to save' });
-                    }
-                  } catch {
-                    setMessage({ type: 'error', text: 'Failed to save' });
-                  } finally {
-                    setInvoiceFieldsSaving(false);
-                  }
-                }}
-                disabled={invoiceFieldsSaving}
-              >
-                {invoiceFieldsSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-                Save fields
-              </Button>
-            </div>
           )}
         </div>
       </Card>

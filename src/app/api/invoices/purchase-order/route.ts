@@ -7,33 +7,19 @@ import { Readable } from 'stream';
 import type { ConfirmItem } from '@/lib/invoice-import/confirm-types';
 import { getMissingFields } from '@/lib/invoice-import/confirm-types';
 
-type Body = { userId: string; invoiceId: string; items: ConfirmItem[]; enabledFields?: string[] };
+type Body = { userId: string; invoiceId: string; items: ConfirmItem[] };
 
-function buildExtraFields(it: ConfirmItem, enabledFields?: string[]): Record<string, unknown> {
-  const enabledSet = Array.isArray(enabledFields) ? new Set(enabledFields) : null;
+function buildExtraFields(it: ConfirmItem): Record<string, unknown> {
   const extra: Record<string, unknown> = {};
-  if (!enabledSet || enabledSet.has('retail_price')) {
-    if (it.retail_price != null && !Number.isNaN(it.retail_price)) extra.retail_price = it.retail_price;
-  }
-  if (!enabledSet || enabledSet.has('category')) {
-    if (it.category?.trim()) extra.category = it.category.trim();
-  }
-  if (!enabledSet || enabledSet.has('description')) {
-    if (it.description?.trim()) extra.description = it.description.trim();
-  }
-  if (!enabledSet || enabledSet.has('vendor')) {
-    if (it.vendor?.trim()) extra.vendor = it.vendor.trim();
-  }
-  if (!enabledSet || enabledSet.has('vendor_code')) {
-    if (it.vendor_code?.trim()) extra.vendor_code = it.vendor_code.trim();
-  }
-  if (!enabledSet || enabledSet.has('initial_stock')) {
-    if (it.initial_stock != null && !Number.isNaN(it.initial_stock)) extra.initial_stock = it.initial_stock;
-  }
+  if (it.retail_price != null && !Number.isNaN(it.retail_price)) extra.retail_price = it.retail_price;
+  if (it.category?.trim()) extra.category = it.category.trim();
+  if (it.description?.trim()) extra.description = it.description.trim();
+  if (it.vendor?.trim()) extra.vendor = it.vendor.trim();
+  if (it.vendor_code?.trim()) extra.vendor_code = it.vendor_code.trim();
+  if (it.initial_stock != null && !Number.isNaN(it.initial_stock)) extra.initial_stock = it.initial_stock;
   if (it.customAttributes) {
     for (const [key, val] of Object.entries(it.customAttributes)) {
       if (val == null || String(val).trim() === '') continue;
-      if (enabledSet && !enabledSet.has(key)) continue;
       extra[key] = String(val).trim();
     }
   }
@@ -53,7 +39,7 @@ function parseDataUrl(dataUrl: string): { buffer: Buffer; mime: string; ext: str
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Body;
-    const { userId, invoiceId, items, enabledFields } = body;
+    const { userId, invoiceId, items } = body;
 
     if (!userId || !invoiceId || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json(
@@ -63,7 +49,7 @@ export async function POST(request: Request) {
     }
 
     for (let i = 0; i < items.length; i++) {
-      const missing = getMissingFields(items[i], enabledFields);
+      const missing = getMissingFields(items[i]);
       if (missing.length > 0) {
         return NextResponse.json(
           { error: `Item ${i + 1}: missing required fields: ${missing.join(', ')}` },
@@ -116,17 +102,15 @@ export async function POST(request: Request) {
         continue;
       }
 
-      const extraFields = buildExtraFields(it, enabledFields);
+      const extraFields = buildExtraFields(it);
       if (typeof console !== 'undefined' && console.log) {
-        console.log('Building Square payload from:', { name, sku: it.sku, retailCents, extraFields, enabledFields });
+        console.log('Building Square payload from:', { name, sku: it.sku, retailCents, extraFields });
       }
 
-      const enabledSet = Array.isArray(enabledFields) ? new Set(enabledFields) : null;
       const customAttrValues: Record<string, { stringValue?: string }> = {};
       if (it.customAttributes) {
         for (const [key, val] of Object.entries(it.customAttributes)) {
           if (val == null || String(val).trim() === '') continue;
-          if (enabledSet && !enabledSet.has(key)) continue;
           customAttrValues[key] = { stringValue: String(val).trim() };
         }
       }

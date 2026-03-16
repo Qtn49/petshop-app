@@ -22,6 +22,9 @@ type InvoiceItem = {
 type CatalogItem = {
   id: string;
   name: string;
+  category?: string;
+  vendor?: string;
+  vendor_code?: string;
   variations?: { id: string; name: string; price?: number }[];
 };
 
@@ -36,6 +39,9 @@ type MatchedItem = {
   catalogItemId?: string;
   catalogVariationId?: string;
   catalogName?: string;
+  catalogCategory?: string;
+  catalogVendor?: string;
+  catalogVendorCode?: string;
   status: 'matched' | 'unmatched';
   selected: boolean;
   invoice_item_id?: string;
@@ -48,10 +54,10 @@ function toConfirmItem(item: MatchedItem): ConfirmItem {
     quantity: item.quantity,
     purchase_price: item.price != null ? Number(item.price) : null,
     retail_price: item.salePrice != null && !Number.isNaN(Number(item.salePrice)) ? Number(item.salePrice) : null,
-    category: '',
+    category: item.catalogCategory ?? '',
     sku: (item.skn ?? '').trim(),
-    vendor: '',
-    vendor_code: '',
+    vendor: item.catalogVendor ?? '',
+    vendor_code: item.catalogVendorCode ?? '',
     image: null,
     images: [],
     initial_stock: item.quantity,
@@ -121,6 +127,9 @@ export default function InvoiceSquarePage() {
             catalogItemId: match?.id,
             catalogVariationId: variation?.id,
             catalogName,
+            catalogCategory: match?.category,
+            catalogVendor: match?.vendor,
+            catalogVendorCode: match?.vendor_code,
             salePrice: salePrice ?? null,
             status: isMatched ? 'matched' : 'unmatched',
             selected: !inPO,
@@ -194,6 +203,9 @@ export default function InvoiceSquarePage() {
           catalogItemId: match?.id,
           catalogVariationId: variation?.id,
           catalogName,
+          catalogCategory: match?.category,
+          catalogVendor: match?.vendor,
+          catalogVendorCode: match?.vendor_code,
           salePrice: salePrice ?? null,
           status: isMatched ? 'matched' : 'unmatched',
           selected: !inPO,

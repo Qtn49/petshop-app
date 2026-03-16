@@ -20,8 +20,7 @@ export default function InvoiceConfirmPage() {
   const [items, setItems] = useState<ConfirmItem[]>([]);
   const [squareCategories, setSquareCategories] = useState<string[]>([]);
   const [squareItemFields, setSquareItemFields] = useState<{ id: string; name: string; optionValues?: { id: string; name: string }[] }[]>([]);
-  const [squareAutocomplete, setSquareAutocomplete] = useState<{ product_name: string[]; sku: string[] }>({ product_name: [], sku: [] });
-  const [enabledFields, setEnabledFields] = useState<string[]>(['category', 'retail_price', 'sku', 'description', 'image']);
+  const [squareAutocomplete, setSquareAutocomplete] = useState<Record<string, string[]>>({ product_name: [], sku: [] });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -56,43 +55,33 @@ export default function InvoiceConfirmPage() {
     if (!user?.id || items.length === 0) return;
     Promise.all([
       fetch(`/api/square/catalog/categories?userId=${encodeURIComponent(user.id)}`).then((r) => r.json()),
-      fetch(`/api/square/catalog?userId=${encodeURIComponent(user.id)}`).then((r) => r.json()),
+      fetch(`/api/square/catalog/autocomplete-values?userId=${encodeURIComponent(user.id)}`).then((r) => r.json()),
     ])
-      .then(([categoriesData, catalogData]) => {
+      .then(([categoriesData, valuesData]) => {
         if (Array.isArray(categoriesData.categories)) setSquareCategories(categoriesData.categories);
-        if (catalogData?.items && Array.isArray(catalogData.items)) {
-          const names = new Set<string>();
-          const skus = new Set<string>();
-          for (const item of catalogData.items) {
-            if (item.name?.trim()) names.add(item.name.trim());
-            if (item.sku?.trim()) skus.add(item.sku.trim());
-            for (const v of item.variations ?? []) {
-              if (v?.sku?.trim()) skus.add(v.sku.trim());
-            }
-          }
+        const vals = valuesData?.values;
+        if (vals && typeof vals === 'object') {
           setSquareAutocomplete({
-            product_name: Array.from(names).sort((a, b) => a.localeCompare(b)),
-            sku: Array.from(skus).sort((a, b) => a.localeCompare(b)),
+            product_name: Array.isArray(vals.product_name) ? vals.product_name : [],
+            sku: Array.isArray(vals.sku) ? vals.sku : [],
+            ...Object.fromEntries(
+              Object.entries(vals)
+                .filter(([k, v]) => k !== 'product_name' && k !== 'sku' && Array.isArray(v))
+                .map(([k, v]) => [k, v])
+            ),
           });
         }
       })
       .catch(() => {});
   }, [user?.id, items.length]);
 
-  const fetchEnabledFields = useCallback(async () => {
+  const fetchSquareItemFields = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const [fieldsRes, itemFieldsRes] = await Promise.all([
-        fetch(`/api/settings/invoice-new-item-fields?userId=${encodeURIComponent(user.id)}`, { cache: 'no-store' }),
-        fetch(`/api/square/catalog/item-fields?userId=${encodeURIComponent(user.id)}`, { cache: 'no-store' }),
-      ]);
-      const fieldsData = fieldsRes.ok ? await fieldsRes.json() : null;
-      const itemFieldsData = itemFieldsRes.ok ? await itemFieldsRes.json() : null;
-      if (fieldsData && Array.isArray(fieldsData.enabledFields)) {
-        setEnabledFields(fieldsData.enabledFields);
-      }
-      if (itemFieldsData?.fields && Array.isArray(itemFieldsData.fields)) {
-        setSquareItemFields(itemFieldsData.fields);
+      const res = await fetch(`/api/square/catalog/item-fields?userId=${encodeURIComponent(user.id)}`, { cache: 'no-store' });
+      const data = res.ok ? await res.json() : null;
+      if (data?.fields && Array.isArray(data.fields)) {
+        setSquareItemFields(data.fields);
       }
     } catch {
       // ignore
@@ -100,15 +89,15 @@ export default function InvoiceConfirmPage() {
   }, [user?.id]);
 
   useEffect(() => {
-    fetchEnabledFields();
-  }, [fetchEnabledFields]);
+    fetchSquareItemFields();
+  }, [fetchSquareItemFields]);
 
   useEffect(() => {
     if (!user?.id) return;
-    const onFocus = () => fetchEnabledFields();
+    const onFocus = () => fetchSquareItemFields();
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [user?.id, fetchEnabledFields]);
+  }, [user?.id, fetchSquareItemFields]);
 
   const updateItem = useCallback((index: number, updates: Partial<ConfirmItem>) => {
     setItems((prev) => {
@@ -127,11 +116,11 @@ export default function InvoiceConfirmPage() {
     const result: { index: number; fields: RequiredField[] }[] = [];
     items.forEach((item, index) => {
       if (item.includedInPO === false) return;
-      const fields = getMissingFields(item, enabledFields);
+      const fields = getMissingFields(item);
       if (fields.length) result.push({ index, fields });
     });
     return result;
-  }, [items, enabledFields]);
+  }, [items]);
 
   const totalCost = includedItems.reduce(
     (sum, i) => sum + (i.purchase_price != null && !Number.isNaN(i.purchase_price) ? i.purchase_price * i.quantity : 0),
@@ -172,7 +161,6 @@ export default function InvoiceConfirmPage() {
           userId: user.id,
           invoiceId,
           items: includedItems,
-          enabledFields,
         }),
       });
       const data = await res.json();
@@ -229,12 +217,11 @@ export default function InvoiceConfirmPage() {
                     key={i}
                     item={item}
                     index={i}
-                    missingFields={new Set(showValidation ? getMissingFields(item, enabledFields) : [])}
+                    missingFields={new Set(showValidation ? getMissingFields(item) : [])}
                     onChange={updateItem}
                     squareCategories={squareCategories}
                     disabled={submitting}
                     itemRef={(el) => { itemRefs.current[i] = el; }}
-                    enabledFields={enabledFields}
                     squareItemFields={squareItemFields}
                     squareAutocomplete={squareAutocomplete}
                   />
@@ -255,12 +242,11 @@ export default function InvoiceConfirmPage() {
                     key={i}
                     item={item}
                     index={i}
-                    missingFields={new Set(showValidation ? getMissingFields(item, enabledFields) : [])}
+                    missingFields={new Set(showValidation ? getMissingFields(item) : [])}
                     onChange={updateItem}
                     squareCategories={squareCategories}
                     disabled={submitting}
                     itemRef={(el) => { itemRefs.current[i] = el; }}
-                    enabledFields={enabledFields}
                     squareItemFields={squareItemFields}
                     squareAutocomplete={squareAutocomplete}
                   />

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase-server';
 import { getSquareEnvironment } from '@/lib/integrations/square/squareOAuth';
+import { OPTIONAL_FIELDS_DEFAULT_VALUES } from '@/lib/invoice-import/confirm-types';
 import { Client, Environment } from 'square';
 
 export type SquareItemField = {
@@ -15,6 +16,8 @@ const SQUARE_BUILTIN_ITEM_FIELDS: SquareItemField[] = [
   { id: 'sku', name: 'SKU' },
   { id: 'description', name: 'Description' },
   { id: 'image', name: 'Images' },
+  { id: 'vendor', name: 'Vendor' },
+  { id: 'vendor_code', name: 'Vendor code' },
 ];
 
 /** GET: Return all Square item fields (built-in + custom attribute definitions + item options) for settings. */
@@ -71,6 +74,12 @@ export async function GET(request: Request) {
   } catch {
     // Return built-in only if Square catalog listing fails
   }
+
+  const defaults: Record<string, unknown> = { ...OPTIONAL_FIELDS_DEFAULT_VALUES };
+  for (const f of fields) {
+    if (!(f.id in defaults)) defaults[f.id] = '';
+  }
+  console.log('Optional fields and default values:', JSON.stringify(Object.entries(defaults).map(([field, defaultVal]) => ({ field, default: defaultVal })), null, 2));
 
   return NextResponse.json({ fields });
 }
