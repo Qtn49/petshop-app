@@ -192,8 +192,6 @@ export default function SettingsPage() {
         setOrgEmail(data.email ?? '');
         setPhone(data.phone ?? '');
         setCurrency(data.currency ?? 'AUD');
-        const arr = data.invoice_new_item_fields;
-        setInvoiceNewItemFields(Array.isArray(arr) && arr.length > 0 ? arr : ['category', 'retail_price', 'sku', 'description', 'image']);
       }
     } catch {
       // ignore
@@ -240,7 +238,6 @@ export default function SettingsPage() {
           email: orgEmail.trim() || null,
           phone: phone.trim() || null,
           currency: currency || 'AUD',
-          invoice_new_item_fields: invoiceNewItemFields,
         }),
       });
       const data = await res.json();
