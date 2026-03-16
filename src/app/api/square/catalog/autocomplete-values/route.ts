@@ -49,7 +49,7 @@ export async function GET(request: Request) {
     if (!customValues[key]) customValues[key] = new Set<string>();
     customValues[key].add(val.trim());
     const k = key.toLowerCase().replace(/[- ]/g, '_');
-    if (k === 'vendor') vendorValues.add(val.trim());
+    if (k === 'vendor' || k === 'vendors') vendorValues.add(val.trim());
     else if (k === 'vendor_code' || k === 'supplier_code') vendorCodeValues.add(val.trim());
   }
 

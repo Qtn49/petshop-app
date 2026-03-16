@@ -73,7 +73,7 @@ export async function GET(request: Request) {
           }
         }
         const o = obj as { customAttributeValues?: Record<string, { stringValue?: string; numberValue?: string }> };
-        const vendor = getCustom(o, 'vendor') || '';
+        const vendor = getCustom(o, 'vendor') || getCustom(o, 'vendors') || '';
         const vendor_code = getCustom(o, 'vendor_code') || getCustom(o, 'supplier_code') || '';
         return {
           id: (obj as { id?: string }).id,
