@@ -120,7 +120,7 @@ export async function POST(request: Request) {
       console.error('[PO] Failed to load categories:', catErr instanceof Error ? catErr.message : catErr);
     }
 
-    async function resolveCategoryId(categoryName: string): Promise<string | null> {
+    const resolveCategoryId = async (categoryName: string): Promise<string | null> => {
       if (!categoryName.trim()) return null;
       const existing = categoryNameToId.get(categoryName.trim().toLowerCase());
       if (existing) return existing;
