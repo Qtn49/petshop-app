@@ -9,12 +9,16 @@ type Props = {
   missingFields: Set<RequiredField>;
   onChange: (index: number, updates: Partial<ConfirmItem>) => void;
   squareCategories?: string[];
+  /** True while category list is being fetched */
+  categoryLoading?: boolean;
   disabled?: boolean;
   itemRef?: (el: HTMLDivElement | null) => void;
   /** Square item fields metadata (for labels, optionValues for selects) */
   squareItemFields?: SquareFieldMetadata[];
   /** Per-field autocomplete values from Square catalog */
   squareAutocomplete?: { product_name?: string[]; sku?: string[]; [key: string]: string[] | undefined };
+  /** User id for Square Vendors API (vendor autocomplete) */
+  userId?: string;
 };
 
 const FIELDS_TO_RENDER = [
@@ -30,7 +34,7 @@ const FIELDS_TO_RENDER = [
   'image',
 ] as const;
 
-export default function ProductCard({ item, index, missingFields, onChange, squareCategories = [], disabled, itemRef, squareItemFields = [], squareAutocomplete }: Props) {
+export default function ProductCard({ item, index, missingFields, onChange, squareCategories = [], categoryLoading = false, disabled, itemRef, squareItemFields = [], squareAutocomplete, userId }: Props) {
   const update = (updates: Partial<ConfirmItem>) => onChange(index, updates);
   const includedInPO = item.includedInPO !== false;
 
@@ -67,8 +71,10 @@ export default function ProductCard({ item, index, missingFields, onChange, squa
             disabled={disabled}
             missing={missingFields.has(fieldKey as RequiredField)}
             squareCategories={squareCategories}
+            categoryLoading={categoryLoading}
             fieldMetadata={fieldMetaMap[fieldKey]}
             squareAutocomplete={squareAutocomplete}
+            userId={userId}
           />
         ))}
       </div>
@@ -85,6 +91,7 @@ export default function ProductCard({ item, index, missingFields, onChange, squa
             missing={missingFields.has('image')}
             allImages={allImages}
             setAllImages={setAllImages}
+            userId={userId}
           />
         </div>
       )}

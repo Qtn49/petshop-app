@@ -51,6 +51,7 @@ export async function GET(request: Request) {
     } while (cursor);
 
     names.sort((a, b) => a.localeCompare(b));
+    console.log('Category list (for Category field autocomplete):', names);
     return NextResponse.json({ categories: names });
   } catch (err) {
     return NextResponse.json(

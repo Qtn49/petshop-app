@@ -10,6 +10,8 @@ export type ConfirmItem = {
   sku: string;
   description?: string;
   vendor: string;
+  /** Square vendor id when selected from Square Vendors API (stored locally in item_vendors) */
+  vendor_id?: string;
   vendor_code: string;
   /** Data URL or Square image id after upload; first of images for multi-upload */
   image: string | null;

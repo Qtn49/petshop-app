@@ -229,6 +229,19 @@ export async function POST(request: Request) {
         invoice_item_id: it.invoice_item_id ?? null,
         extra_fields: extraFields,
       });
+
+      const catalogItemId = catalogIds[i];
+      if (catalogItemId && (it.vendor?.trim() || it.vendor_code?.trim())) {
+        await supabase.from('item_vendors').upsert(
+          {
+            item_id: catalogItemId,
+            vendor_id: it.vendor_id?.trim() || null,
+            vendor_name: (it.vendor ?? '').trim() || '',
+            vendor_code: (it.vendor_code ?? '').trim() || '',
+          },
+          { onConflict: 'item_id' }
+        );
+      }
     }
 
     if (invoiceItemIds.length > 0) {

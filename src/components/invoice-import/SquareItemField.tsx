@@ -3,6 +3,7 @@
 import MissingFieldHighlight from './MissingFieldHighlight';
 import ImageUploader from './ImageUploader';
 import CategoryCombobox from './CategoryCombobox';
+import VendorAutocomplete from './VendorAutocomplete';
 import { X } from 'lucide-react';
 import type { ConfirmItem } from '@/lib/invoice-import/confirm-types';
 
@@ -32,12 +33,16 @@ type Props = {
   disabled?: boolean;
   missing?: boolean;
   squareCategories?: string[];
+  /** True while category list is being fetched (shows loading in category combobox) */
+  categoryLoading?: boolean;
   allImages?: string[];
   setAllImages?: (urls: string[]) => void;
   /** Optional field metadata from Square (for label name and select/dropdown when optionValues present) */
   fieldMetadata?: SquareFieldMetadata;
   /** Per-field autocomplete values from Square catalog (e.g. product names, SKUs) */
   squareAutocomplete?: { product_name?: string[]; sku?: string[]; [key: string]: string[] | undefined };
+  /** User id for Square Vendors API (vendor autocomplete) */
+  userId?: string;
 };
 
 export default function SquareItemField({
@@ -47,10 +52,12 @@ export default function SquareItemField({
   disabled,
   missing,
   squareCategories = [],
+  categoryLoading = false,
   allImages = [],
   setAllImages,
   fieldMetadata,
   squareAutocomplete,
+  userId,
 }: Props) {
   const label = fieldMetadata?.name ?? labelForKey(field);
 
@@ -65,6 +72,7 @@ export default function SquareItemField({
           disabled={disabled}
           placeholder="Type or pick a Square category"
           missing={!!missing}
+          loading={categoryLoading}
         />
       </MissingFieldHighlight>
     );
@@ -186,26 +194,48 @@ export default function SquareItemField({
     );
   }
 
-  if (field === 'description' || field === 'vendor' || field === 'vendor_code') {
-    const value =
-      field === 'description'
-        ? item.description ?? ''
-        : field === 'vendor'
-          ? item.vendor ?? ''
-          : item.vendor_code ?? '';
-    const onChange =
-      field === 'description'
-        ? (v: string) => update({ description: v })
-        : field === 'vendor'
-          ? (v: string) => update({ vendor: v })
-          : (v: string) => update({ vendor_code: v });
-    const options = squareAutocomplete?.[field] ?? [];
+  if (field === 'vendor') {
+    return (
+      <MissingFieldHighlight missing={!!missing}>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+        <VendorAutocomplete
+          value={item.vendor ?? ''}
+          onChange={(name) => update({ vendor: name })}
+          onVendorSelect={(v) => update({ vendor_id: v.id, vendor: v.name })}
+          userId={userId}
+          disabled={disabled}
+          placeholder="Search vendor..."
+          missing={!!missing}
+        />
+      </MissingFieldHighlight>
+    );
+  }
+
+  if (field === 'vendor_code') {
+    return (
+      <MissingFieldHighlight missing={!!missing}>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+        <input
+          type="text"
+          value={item.vendor_code ?? ''}
+          onChange={(e) => update({ vendor_code: e.target.value })}
+          disabled={disabled}
+          placeholder={label}
+          autoComplete="off"
+          className={`w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none ${missing ? 'ring-1 ring-amber-400' : ''}`}
+        />
+      </MissingFieldHighlight>
+    );
+  }
+
+  if (field === 'description') {
+    const options = squareAutocomplete?.description ?? [];
     return (
       <MissingFieldHighlight missing={!!missing}>
         <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
         <CategoryCombobox
-          value={value}
-          onChange={onChange}
+          value={item.description ?? ''}
+          onChange={(v) => update({ description: v })}
           categories={options}
           disabled={disabled}
           placeholder={label}

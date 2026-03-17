@@ -19,6 +19,7 @@ export default function InvoiceConfirmPage() {
   const invoiceId = params.id as string;
   const [items, setItems] = useState<ConfirmItem[]>([]);
   const [squareCategories, setSquareCategories] = useState<string[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [squareItemFields, setSquareItemFields] = useState<{ id: string; name: string; optionValues?: { id: string; name: string }[] }[]>([]);
   const [squareAutocomplete, setSquareAutocomplete] = useState<Record<string, string[]>>({ product_name: [], sku: [] });
   const [loading, setLoading] = useState(true);
@@ -53,15 +54,21 @@ export default function InvoiceConfirmPage() {
 
   useEffect(() => {
     if (!user?.id || items.length === 0) return;
+    setCategoriesLoading(true);
     Promise.all([
       fetch(`/api/square/catalog/categories?userId=${encodeURIComponent(user.id)}`).then((r) => r.json()),
       fetch(`/api/square/catalog/autocomplete-values?userId=${encodeURIComponent(user.id)}`).then((r) => r.json()),
     ])
       .then(([categoriesData, valuesData]) => {
-        if (Array.isArray(categoriesData.categories)) setSquareCategories(categoriesData.categories);
+        if (Array.isArray(categoriesData.categories)) {
+          setSquareCategories(categoriesData.categories);
+          if (typeof console !== 'undefined' && console.log) {
+            console.log('Category autocomplete (from GET /api/square/catalog/categories):', categoriesData.categories);
+          }
+        }
         const vals = valuesData?.values;
         if (vals && typeof vals === 'object') {
-          setSquareAutocomplete({
+          const autocomplete = {
             product_name: Array.isArray(vals.product_name) ? vals.product_name : [],
             sku: Array.isArray(vals.sku) ? vals.sku : [],
             ...Object.fromEntries(
@@ -69,10 +76,15 @@ export default function InvoiceConfirmPage() {
                 .filter(([k, v]) => k !== 'product_name' && k !== 'sku' && Array.isArray(v))
                 .map(([k, v]) => [k, v])
             ),
-          });
+          } as Record<string, string[]>;
+          setSquareAutocomplete(autocomplete);
+        }
+        if (typeof console !== 'undefined' && console.log) {
+          console.log('Vendor autocomplete: use Vendor field (focus it) → calls GET /api/vendors');
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setCategoriesLoading(false));
   }, [user?.id, items.length]);
 
   const fetchSquareItemFields = useCallback(async () => {
@@ -220,10 +232,12 @@ export default function InvoiceConfirmPage() {
                     missingFields={new Set(showValidation ? getMissingFields(item) : [])}
                     onChange={updateItem}
                     squareCategories={squareCategories}
+                    categoryLoading={categoriesLoading}
                     disabled={submitting}
                     itemRef={(el) => { itemRefs.current[i] = el; }}
                     squareItemFields={squareItemFields}
                     squareAutocomplete={squareAutocomplete}
+                    userId={user?.id}
                   />
                 )
             )}
@@ -245,10 +259,12 @@ export default function InvoiceConfirmPage() {
                     missingFields={new Set(showValidation ? getMissingFields(item) : [])}
                     onChange={updateItem}
                     squareCategories={squareCategories}
+                    categoryLoading={categoriesLoading}
                     disabled={submitting}
                     itemRef={(el) => { itemRefs.current[i] = el; }}
                     squareItemFields={squareItemFields}
                     squareAutocomplete={squareAutocomplete}
+                    userId={user?.id}
                   />
                 )
             )}

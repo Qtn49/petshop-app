@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { Loader2 } from 'lucide-react';
 
 type Props = {
   value: string;
@@ -11,6 +12,8 @@ type Props = {
   placeholder?: string;
   className?: string;
   missing?: boolean;
+  /** Show loading state in the dropdown (e.g. while categories are being fetched) */
+  loading?: boolean;
 };
 
 export default function CategoryCombobox({
@@ -21,6 +24,7 @@ export default function CategoryCombobox({
   placeholder = 'Category',
   className = '',
   missing,
+  loading = false,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
@@ -76,7 +80,12 @@ export default function CategoryCombobox({
           className="absolute z-10 mt-1 w-full max-h-48 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg py-1"
           role="listbox"
         >
-          {filtered.length === 0 ? (
+          {loading ? (
+            <li className="px-3 py-3 text-sm text-slate-500 flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden />
+              Loading categories…
+            </li>
+          ) : filtered.length === 0 ? (
             <li className="px-3 py-2 text-sm text-slate-500">
               {categories.length === 0 ? 'No Square categories yet. Type your own.' : 'No match. Type your own category.'}
             </li>
