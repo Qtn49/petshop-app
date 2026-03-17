@@ -1,12 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Check, Trash2 } from 'lucide-react';
+import { Plus, Check, Trash2, Calendar, Eye, EyeOff } from 'lucide-react';
 
 type Task = {
   id: string;
   title: string;
   completed: boolean;
+  due_date?: string | null;
 };
 
 export default function TodoList({
@@ -19,6 +20,8 @@ export default function TodoList({
   userId?: string;
 }) {
   const [newTask, setNewTask] = useState('');
+  const [newDueDate, setNewDueDate] = useState('');
+  const [showCompleted, setShowCompleted] = useState(false);
 
   const addTask = async () => {
     if (!newTask.trim()) return;
@@ -26,8 +29,10 @@ export default function TodoList({
       id: crypto.randomUUID(),
       title: newTask.trim(),
       completed: false,
+      due_date: newDueDate || null,
     };
     setNewTask('');
+    setNewDueDate('');
     onTasksChange([...tasks, task]);
 
     if (userId) {
@@ -35,7 +40,11 @@ export default function TodoList({
         await fetch('/api/tasks', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, title: task.title }),
+          body: JSON.stringify({
+            userId,
+            title: task.title,
+            dueDate: task.due_date,
+          }),
         });
       } catch {
         // Silent fail
@@ -77,14 +86,25 @@ export default function TodoList({
     }
   };
 
+  const visibleTasks = showCompleted ? tasks : tasks.filter((t) => !t.completed);
+  const completedCount = tasks.filter((t) => t.completed).length;
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col h-full min-h-0">
-      <div className="p-4 border-b border-slate-100 flex-shrink-0">
+      <div className="p-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
         <h2 className="font-semibold text-slate-800">To-Do List</h2>
+        <button
+          onClick={() => setShowCompleted((v) => !v)}
+          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition"
+          title={showCompleted ? 'Hide completed' : 'Show completed'}
+        >
+          {showCompleted ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+          {showCompleted ? 'Hide' : 'Show'} completed ({completedCount})
+        </button>
       </div>
       <div className="p-4 flex flex-col flex-1 min-h-0">
         <ul className="space-y-2 flex-1 overflow-y-auto min-h-0 mb-4">
-          {tasks.map((task) => (
+          {visibleTasks.map((task) => (
             <li
               key={task.id}
               className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 group"
@@ -97,21 +117,31 @@ export default function TodoList({
               >
                 {task.completed && <Check className="w-3 h-3" />}
               </button>
-              <span
-                className={`flex-1 ${task.completed ? 'line-through text-slate-500' : 'text-slate-800'}`}
-              >
-                {task.title}
-              </span>
+              <div className="flex-1 min-w-0">
+                <span
+                  className={`block ${task.completed ? 'line-through text-slate-500' : 'text-slate-800'}`}
+                >
+                  {task.title}
+                </span>
+                {task.due_date && (
+                  <span className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
+                    <Calendar className="w-3 h-3" />
+                    {task.due_date}
+                  </span>
+                )}
+              </div>
               <button
                 onClick={() => deleteTask(task.id)}
-                className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 text-red-500 text-slate-400"
+                className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 text-red-500"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
             </li>
           ))}
-          {tasks.length === 0 && (
-            <p className="text-slate-500 text-sm py-4 text-center">No tasks yet</p>
+          {visibleTasks.length === 0 && (
+            <p className="text-slate-500 text-sm py-4 text-center">
+              {tasks.length > 0 ? 'All tasks completed!' : 'No tasks yet'}
+            </p>
           )}
         </ul>
         <div className="flex gap-2 flex-shrink-0">
@@ -122,6 +152,13 @@ export default function TodoList({
             onKeyDown={(e) => e.key === 'Enter' && addTask()}
             placeholder="Add a task..."
             className="flex-1 px-3 py-2 rounded-lg border border-slate-200 focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none"
+          />
+          <input
+            type="date"
+            value={newDueDate}
+            onChange={(e) => setNewDueDate(e.target.value)}
+            className="px-3 py-2 rounded-lg border border-slate-200 focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none text-sm text-slate-600 w-36"
+            title="Due date (optional)"
           />
           <button
             onClick={addTask}

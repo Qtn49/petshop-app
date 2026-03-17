@@ -2,11 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Link2, FileUp, Fish, Settings } from 'lucide-react';
+import { LayoutDashboard, Link2, FileUp, Fish, CalendarDays, CheckSquare, Settings } from 'lucide-react';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/suppliers', label: 'Saved Links', icon: Link2 },
+  { href: '/calendar', label: 'Calendar', icon: CalendarDays },
+  { href: '/tasks', label: 'To-Do', icon: CheckSquare },
+  { href: '/suppliers', label: 'Links', icon: Link2 },
   { href: '/invoices', label: 'Invoices', icon: FileUp },
   { href: '/aquariums', label: 'Aquariums', icon: Fish },
 ];

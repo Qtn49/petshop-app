@@ -7,6 +7,8 @@ import {
   Link2,
   FileUp,
   Fish,
+  CalendarDays,
+  CheckSquare,
   LogOut,
   PanelLeftClose,
   PanelLeft,
@@ -17,6 +19,8 @@ import { useSidebar } from '@/contexts/SidebarContext';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/calendar', label: 'Calendar', icon: CalendarDays },
+  { href: '/tasks', label: 'To-Do List', icon: CheckSquare },
   { href: '/suppliers', label: 'Saved Links', icon: Link2 },
   { href: '/invoices', label: 'Invoices', icon: FileUp },
   { href: '/aquariums', label: 'Aquariums', icon: Fish },

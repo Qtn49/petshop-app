@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   format,
   startOfMonth,
@@ -15,7 +15,20 @@ import {
 } from 'date-fns';
 import DayTasksPanel from './DayTasksPanel';
 
-export default function DashboardCalendar({ userId }: { userId?: string }) {
+type TaskWithDate = {
+  id: string;
+  title: string;
+  completed: boolean;
+  due_date?: string | null;
+};
+
+export default function DashboardCalendar({
+  userId,
+  tasks = [],
+}: {
+  userId?: string;
+  tasks?: TaskWithDate[];
+}) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
@@ -39,14 +52,30 @@ export default function DashboardCalendar({ userId }: { userId?: string }) {
     day = addDays(day, 1);
   }
 
-  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const tasksByDate = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const t of tasks) {
+      if (t.due_date) {
+        const key = typeof t.due_date === 'string' ? t.due_date.slice(0, 10) : '';
+        if (key) map.set(key, (map.get(key) ?? 0) + 1);
+      }
+    }
+    return map;
+  }, [tasks]);
+
+  const weekDays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
   const handleDayClick = (d: Date) => {
-    setSelectedDate(d);
+    if (selectedDate && isSameDay(d, selectedDate)) {
+      setSelectedDate(null);
+    } else {
+      setSelectedDate(d);
+    }
   };
 
   const getDayClassName = (d: Date) => {
-    const base = 'aspect-square w-full flex items-center justify-center rounded-lg text-sm cursor-pointer transition font-medium';
+    const height = selectedDate ? 'h-7' : 'h-full min-h-[28px]';
+    const base = `w-full ${height} flex items-center justify-center rounded text-xs cursor-pointer transition font-medium relative`;
     if (!isSameMonth(d, monthStart)) {
       return `${base} text-slate-300`;
     }
@@ -56,42 +85,44 @@ export default function DashboardCalendar({ userId }: { userId?: string }) {
       return `${base} bg-green-500 text-white hover:bg-green-600`;
     }
     if (isToday) {
-      return `${base} bg-primary-100 text-primary-800 font-bold ring-2 ring-primary-400`;
+      return `${base} bg-primary-100 text-primary-800 font-bold ring-1 ring-primary-400`;
     }
     return `${base} text-slate-700 hover:bg-slate-100`;
   };
 
+  const getTaskCount = (d: Date) => {
+    const key = format(d, 'yyyy-MM-dd');
+    return tasksByDate.get(key) ?? 0;
+  };
+
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col">
-      {selectedDate && (
-        <DayTasksPanel date={selectedDate} userId={userId} />
-      )}
-      <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-        <h2 className="font-semibold text-slate-800">Calendar</h2>
-        <div className="flex gap-2">
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col h-full">
+      <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+        <h2 className="font-semibold text-slate-800 text-sm">Calendar</h2>
+        <div className="flex items-center gap-1">
           <button
             onClick={() => setCurrentDate(subMonths(currentDate, 1))}
-            className="p-2 rounded-lg hover:bg-slate-100 text-slate-600"
+            className="p-1 rounded hover:bg-slate-100 text-slate-600 text-sm"
           >
             ‹
           </button>
-          <span className="px-4 py-2 font-medium text-slate-800 min-w-[140px] text-center">
-            {format(currentDate, 'MMMM yyyy')}
+          <span className="px-2 py-1 font-medium text-slate-800 text-xs min-w-[100px] text-center">
+            {format(currentDate, 'MMM yyyy')}
           </span>
           <button
             onClick={() => setCurrentDate(addMonths(currentDate, 1))}
-            className="p-2 rounded-lg hover:bg-slate-100 text-slate-600"
+            className="p-1 rounded hover:bg-slate-100 text-slate-600 text-sm"
           >
             ›
           </button>
         </div>
       </div>
-      <div className="p-4 overflow-x-auto">
-        <table className="w-full min-w-[280px]">
+      <div className={`px-2 py-1 ${selectedDate ? 'flex-shrink-0' : 'flex-1 min-h-0'}`}>
+        <table className="w-full table-fixed" style={selectedDate ? undefined : { height: '100%' }}>
           <thead>
             <tr>
-              {weekDays.map((d) => (
-                <th key={d} className="text-center text-xs text-slate-500 py-2 font-medium">
+              {weekDays.map((d, i) => (
+                <th key={i} className="text-center text-[10px] text-slate-400 py-1 font-medium">
                   {d}
                 </th>
               ))}
@@ -100,22 +131,36 @@ export default function DashboardCalendar({ userId }: { userId?: string }) {
           <tbody>
             {rows.map((row, i) => (
               <tr key={i}>
-                {row.map((d) => (
-                  <td key={d.toISOString()} className="p-1">
-                    <button
-                      type="button"
-                      className={getDayClassName(d)}
-                      onClick={() => handleDayClick(d)}
-                    >
-                      {format(d, 'd')}
-                    </button>
-                  </td>
-                ))}
+                {row.map((d) => {
+                  const count = getTaskCount(d);
+                  const isSelected = selectedDate && isSameDay(d, selectedDate);
+                  return (
+                    <td key={d.toISOString()} className="p-0.5">
+                      <button
+                        type="button"
+                        className={getDayClassName(d)}
+                        onClick={() => handleDayClick(d)}
+                      >
+                        {format(d, 'd')}
+                        {count > 0 && isSameMonth(d, monthStart) && (
+                          <span
+                            className={`absolute -bottom-0.5 w-1 h-1 rounded-full ${
+                              isSelected ? 'bg-white' : 'bg-primary-500'
+                            }`}
+                          />
+                        )}
+                      </button>
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {selectedDate && (
+        <DayTasksPanel date={selectedDate} userId={userId} />
+      )}
     </div>
   );
 }
