@@ -262,7 +262,7 @@ export async function POST(request: Request) {
               };
               const formData = new FormData();
               formData.append('request', JSON.stringify(imgRequest));
-              formData.append('image_file', new Blob([parsed.buffer], { type: parsed.mime }), `image.${parsed.ext}`);
+              formData.append('image_file', new Blob([new Uint8Array(parsed.buffer)], { type: parsed.mime }), `image.${parsed.ext}`);
 
               const imgRes = await fetch(`${squareBaseUrl}/v2/catalog/images`, {
                 method: 'POST',
