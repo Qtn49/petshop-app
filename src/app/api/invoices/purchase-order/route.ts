@@ -393,7 +393,7 @@ export async function POST(request: Request) {
       if (it.invoice_item_id) invoiceItemIds.push(it.invoice_item_id);
       const extraFields = buildExtraFields(it);
       console.log(`[PO] Inserting PO line ${i}: ${it.product_name}`);
-      await supabase.from('purchase_order_lines').insert({
+      const { error: lineErr } = await supabase.from('purchase_order_lines').insert({
         purchase_order_id: po.id,
         product_name: it.product_name,
         sku: it.sku?.trim() || null,
@@ -404,12 +404,13 @@ export async function POST(request: Request) {
         invoice_item_id: it.invoice_item_id ?? null,
         extra_fields: extraFields,
       });
+      if (lineErr) console.error(`[PO] PO line ${i} insert FAILED:`, lineErr.message);
 
       const resolvedItemId = catalogIds[i];
       const resolvedVariationId = variationIds[i];
       if (resolvedVariationId && (it.vendor?.trim() || it.vendor_code?.trim())) {
         console.log(`[PO] Upserting item_vendor: variation_id=${resolvedVariationId}, item_id=${resolvedItemId}`);
-        await supabase.from('item_vendors').upsert(
+        const { error: vendorErr } = await supabase.from('item_vendors').upsert(
           {
             variation_id: resolvedVariationId,
             item_id: resolvedItemId ?? null,
@@ -419,15 +420,17 @@ export async function POST(request: Request) {
           },
           { onConflict: 'variation_id' }
         );
+        if (vendorErr) console.error(`[PO] item_vendor upsert FAILED:`, vendorErr.message);
       }
     }
 
     if (invoiceItemIds.length > 0) {
       console.log(`[PO] Marking ${invoiceItemIds.length} invoice items as in_purchase_order`);
-      await supabase
+      const { error: markErr } = await supabase
         .from('invoice_items')
         .update({ in_purchase_order: true })
         .in('id', invoiceItemIds);
+      if (markErr) console.error(`[PO] Marking in_purchase_order FAILED:`, markErr.message);
     }
 
     console.log('[PO] === SUCCESS ===');

@@ -58,43 +58,65 @@ export async function GET(request: Request) {
       return '';
     };
 
-    const { result } = await client.catalogApi.listCatalog(undefined, 'ITEM');
-    const items =
-      result.objects?.map((obj) => {
-        const itemData = obj.itemData as { name?: string; sku?: string; category_id?: string; categories?: { id?: string }[]; variations?: { id?: string; itemVariationData?: { name?: string; priceMoney?: { amount?: string | number }; sku?: string } }[] } | undefined;
-        const catId = itemData?.category_id;
-        const cats = itemData?.categories;
-        let category = '';
-        if (catId) category = categoryIdToName.get(catId) ?? '';
-        if (!category && Array.isArray(cats)) {
-          for (const c of cats) {
-            const n = categoryIdToName.get(c.id ?? '');
-            if (n) { category = n; break; }
-          }
+    type RawObj = {
+      id?: string;
+      customAttributeValues?: Record<string, { stringValue?: string; numberValue?: string }>;
+      itemData?: {
+        name?: string;
+        sku?: string;
+        category_id?: string;
+        categories?: { id?: string }[];
+        variations?: {
+          id?: string;
+          itemVariationData?: { name?: string; priceMoney?: { amount?: string | number }; sku?: string };
+        }[];
+      };
+    };
+
+    const allObjects: RawObj[] = [];
+    let itemCursor: string | undefined;
+    do {
+      const { result } = await client.catalogApi.listCatalog(itemCursor, 'ITEM');
+      for (const obj of (result.objects ?? []) as RawObj[]) {
+        allObjects.push(obj);
+      }
+      itemCursor = result.cursor ?? undefined;
+    } while (itemCursor);
+
+    const items = allObjects.map((obj) => {
+      const itemData = obj.itemData;
+      const catId = itemData?.category_id;
+      const cats = itemData?.categories;
+      let category = '';
+      if (catId) category = categoryIdToName.get(catId) ?? '';
+      if (!category && Array.isArray(cats)) {
+        for (const c of cats) {
+          const n = categoryIdToName.get(c.id ?? '');
+          if (n) { category = n; break; }
         }
-        const o = obj as { customAttributeValues?: Record<string, { stringValue?: string; numberValue?: string }> };
-        const vendor = getCustom(o, 'vendor') || getCustom(o, 'vendors') || '';
-        const vendor_code = getCustom(o, 'vendor_code') || getCustom(o, 'supplier_code') || '';
-        return {
-          id: (obj as { id?: string }).id,
-          name: itemData?.name,
-          sku: itemData?.sku,
-          category: category || undefined,
-          vendor: vendor || undefined,
-          vendor_code: vendor_code || undefined,
-          variations: itemData?.variations?.map((v: { id?: string; itemVariationData?: { name?: string; priceMoney?: { amount?: string | number }; sku?: string } }) => {
-            const vdata = v?.itemVariationData;
-            const amount = vdata?.priceMoney?.amount;
-            const price = amount != null ? Number(amount) / 100 : undefined;
-            return {
-              id: v?.id,
-              name: vdata?.name,
-              price,
-              sku: vdata?.sku,
-            };
-          }),
-        };
-      }) || [];
+      }
+      const vendor = getCustom(obj, 'vendor') || getCustom(obj, 'vendors') || '';
+      const vendor_code = getCustom(obj, 'vendor_code') || getCustom(obj, 'supplier_code') || '';
+      return {
+        id: obj.id,
+        name: itemData?.name,
+        sku: itemData?.sku,
+        category: category || undefined,
+        vendor: vendor || undefined,
+        vendor_code: vendor_code || undefined,
+        variations: itemData?.variations?.map((v) => {
+          const vdata = v?.itemVariationData;
+          const amount = vdata?.priceMoney?.amount;
+          const price = amount != null ? Number(amount) / 100 : undefined;
+          return {
+            id: v?.id,
+            name: vdata?.name,
+            price,
+            sku: vdata?.sku,
+          };
+        }),
+      };
+    });
 
     return NextResponse.json({ items });
   } catch (err) {
