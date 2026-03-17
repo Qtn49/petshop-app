@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useCalculator } from '@/contexts/CalculatorContext';
 import { X } from 'lucide-react';
 
@@ -14,6 +14,7 @@ export default function FloatingCalculator() {
   const [operation, setOperation] = useState<Operation>(null);
   const [waitingForOperand, setWaitingForOperand] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const inputDigit = useCallback(
     (digit: string) => {
@@ -55,6 +56,24 @@ export default function FloatingCalculator() {
     setOperation(null);
     setWaitingForOperand(false);
   }, []);
+
+  const backspace = useCallback(() => {
+    if (waitingForOperand) return;
+    if (display.length <= 1 || display === '0') {
+      setDisplay('0');
+      setExpression((prev) => prev.slice(0, -1) || '0');
+    } else {
+      const newDisplay = display.slice(0, -1);
+      setDisplay(newDisplay);
+      setExpression((prev) => prev.slice(0, -1));
+    }
+  }, [display, waitingForOperand]);
+
+  const toggleSign = useCallback(() => {
+    const v = -parseFloat(display);
+    setDisplay(String(v));
+    setExpression(String(v));
+  }, [display]);
 
   const addOperatorToExpression = (op: Operation) => {
     const sym = op ? { '+': ' + ', '-': ' - ', '×': ' × ', '÷': ' ÷ ' }[op] : '';
@@ -98,10 +117,20 @@ export default function FloatingCalculator() {
 
   const inputPercent = useCallback(() => {
     const value = parseFloat(display);
-    const result = value / 100;
-    setDisplay(String(result));
-    setExpression(String(result));
-  }, [display]);
+    if (previousValue !== null && (operation === '+' || operation === '-')) {
+      const percentAmount = previousValue * value / 100;
+      setDisplay(String(percentAmount));
+      setExpression((prev) => prev.replace(/[\d.]+$/, value + '%'));
+    } else if (previousValue !== null && (operation === '×' || operation === '÷')) {
+      const fraction = value / 100;
+      setDisplay(String(fraction));
+      setExpression((prev) => prev.replace(/[\d.]+$/, value + '%'));
+    } else {
+      const result = value / 100;
+      setDisplay(String(result));
+      setExpression(value + '%');
+    }
+  }, [display, previousValue, operation]);
 
   const handleEquals = useCallback(() => {
     if (operation) {
@@ -124,11 +153,49 @@ export default function FloatingCalculator() {
     }
   }, [operation, performOperation, display, previousValue, expression, addToHistory]);
 
+  // Keyboard support
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Prevent keys from reaching elements behind the calculator
+      if (/^[\d.+\-*\/=%]$/.test(e.key) || ['Enter', 'Escape', 'Backspace', 'Delete'].includes(e.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+
+      if (e.key === 'Escape') {
+        close();
+        return;
+      }
+      if (e.key >= '0' && e.key <= '9') { inputDigit(e.key); return; }
+      if (e.key === '.') { inputDecimal(); return; }
+      if (e.key === '+') { performOperation('+'); return; }
+      if (e.key === '-') { performOperation('-'); return; }
+      if (e.key === '*') { performOperation('×'); return; }
+      if (e.key === '/') { performOperation('÷'); return; }
+      if (e.key === '%') { inputPercent(); return; }
+      if (e.key === 'Enter' || e.key === '=') { handleEquals(); return; }
+      if (e.key === 'Backspace') { backspace(); return; }
+      if (e.key === 'Delete') { clear(); return; }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, close, inputDigit, inputDecimal, performOperation, inputPercent, handleEquals, backspace, clear]);
+
+  // Auto-focus container when opened
+  useEffect(() => {
+    if (isOpen && containerRef.current) {
+      containerRef.current.focus();
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const buttons = [
     { label: 'C', onClick: clear, className: 'bg-slate-400 text-white' },
-    { label: '±', onClick: () => { const v = -parseFloat(display); setDisplay(String(v)); setExpression(String(v)); }, className: 'bg-slate-400 text-white' },
+    { label: '±', onClick: toggleSign, className: 'bg-slate-400 text-white' },
     { label: '%', onClick: inputPercent, className: 'bg-slate-400 text-white' },
     { label: '÷', onClick: () => performOperation('÷'), className: 'bg-amber-500 text-white' },
     { label: '7', onClick: () => inputDigit('7'), className: 'bg-slate-600 text-white' },
@@ -151,7 +218,11 @@ export default function FloatingCalculator() {
   return (
     <div className="fixed inset-0 z-50 hidden md:flex md:items-center md:justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={close} />
-      <div className="relative w-full max-w-sm bg-black rounded-t-3xl md:rounded-3xl overflow-hidden shadow-2xl">
+      <div
+        ref={containerRef}
+        tabIndex={-1}
+        className="relative w-full max-w-sm bg-black rounded-t-3xl md:rounded-3xl overflow-hidden shadow-2xl outline-none"
+      >
         <div className="flex justify-between items-center p-4">
           <span className="text-white/60 text-sm">Calculator</span>
           <button
@@ -162,6 +233,40 @@ export default function FloatingCalculator() {
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* History on top */}
+        <div className="px-4 pb-2">
+          <div className="flex items-center justify-between mb-1">
+            <button
+              type="button"
+              onClick={() => setShowHistory((v) => !v)}
+              className="text-white/70 text-sm hover:text-white"
+            >
+              {showHistory ? 'Hide history' : 'History'}
+            </button>
+            {history.length > 0 && (
+              <button
+                type="button"
+                onClick={clearHistory}
+                className="text-white/50 text-xs hover:text-white/80"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {showHistory && history.length > 0 && (
+            <div className="max-h-32 overflow-y-auto space-y-1 text-sm text-white/80 mb-2">
+              {history.map((entry, i) => (
+                <div key={i} className="flex justify-between gap-2">
+                  <span className="truncate">{entry.expression}</span>
+                  <span className="font-medium text-white shrink-0">= {entry.result}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {showHistory && history.length > 0 && <div className="border-b border-white/20 mb-2" />}
+        </div>
+
         <div className="px-4 pb-4">
           <div className="text-right text-white/70 text-lg py-2 min-h-[28px] overflow-x-auto break-all">
             {expression || '0'}
@@ -174,42 +279,16 @@ export default function FloatingCalculator() {
               <button
                 key={btn.label}
                 onClick={btn.onClick}
+                tabIndex={-1}
                 className={`h-16 rounded-full text-xl font-medium active:scale-95 transition ${btn.className}`}
               >
                 {btn.label}
               </button>
             ))}
           </div>
-          <div className="mt-3 pt-3 border-t border-white/20">
-            <div className="flex items-center justify-between mb-2">
-              <button
-                type="button"
-                onClick={() => setShowHistory((v) => !v)}
-                className="text-white/70 text-sm hover:text-white"
-              >
-                {showHistory ? 'Hide history' : 'History'}
-              </button>
-              {history.length > 0 && (
-                <button
-                  type="button"
-                  onClick={clearHistory}
-                  className="text-white/50 text-xs hover:text-white/80"
-                >
-                  Clear history
-                </button>
-              )}
-            </div>
-            {showHistory && history.length > 0 && (
-              <div className="max-h-32 overflow-y-auto space-y-1 text-sm text-white/80">
-                {history.map((entry, i) => (
-                  <div key={i} className="flex justify-between gap-2">
-                    <span className="truncate">{entry.expression}</span>
-                    <span className="font-medium text-white shrink-0">= {entry.result}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <p className="text-center text-white/30 text-xs mt-3">
+            Use keyboard to type &middot; Esc to close
+          </p>
         </div>
       </div>
     </div>
