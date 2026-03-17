@@ -42,9 +42,6 @@ export default function VendorAutocomplete({
       const data = await res.json();
       if (res.ok && Array.isArray(data.vendors)) {
         setVendors(data.vendors);
-        if (typeof console !== 'undefined' && console.log) {
-          console.log('Vendors (Step 3):', data.vendors);
-        }
       } else {
         setVendors([]);
       }

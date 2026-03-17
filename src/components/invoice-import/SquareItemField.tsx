@@ -35,6 +35,8 @@ type Props = {
   squareCategories?: string[];
   /** True while category list is being fetched (shows loading in category combobox) */
   categoryLoading?: boolean;
+  /** True while product name options are being fetched (shows loading in product name combobox) */
+  productNameOptionsLoading?: boolean;
   allImages?: string[];
   setAllImages?: (urls: string[]) => void;
   /** Optional field metadata from Square (for label name and select/dropdown when optionValues present) */
@@ -53,6 +55,7 @@ export default function SquareItemField({
   missing,
   squareCategories = [],
   categoryLoading = false,
+  productNameOptionsLoading = false,
   allImages = [],
   setAllImages,
   fieldMetadata,
@@ -172,6 +175,7 @@ export default function SquareItemField({
           disabled={disabled}
           placeholder="Product name"
           missing={!!missing}
+          loading={productNameOptionsLoading}
         />
       </MissingFieldHighlight>
     );

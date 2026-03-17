@@ -26,6 +26,8 @@ export type ConfirmItem = {
   includedInPO?: boolean;
   /** Invoice item id (invoice_items.id) for marking in_purchase_order when PO is created. */
   invoice_item_id?: string;
+  /** When true: add as purchase order line only, do not create a Square catalog item. Set when user selects an existing catalog product name. */
+  addAsPoOnly?: boolean;
   /** Custom attribute keys from Square (e.g. item options, custom attribute definitions) */
   customAttributes?: Record<string, string>;
 };

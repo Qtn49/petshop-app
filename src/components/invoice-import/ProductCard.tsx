@@ -11,6 +11,8 @@ type Props = {
   squareCategories?: string[];
   /** True while category list is being fetched */
   categoryLoading?: boolean;
+  /** True while product name autocomplete options are being fetched */
+  productNameOptionsLoading?: boolean;
   disabled?: boolean;
   itemRef?: (el: HTMLDivElement | null) => void;
   /** Square item fields metadata (for labels, optionValues for selects) */
@@ -34,7 +36,7 @@ const FIELDS_TO_RENDER = [
   'image',
 ] as const;
 
-export default function ProductCard({ item, index, missingFields, onChange, squareCategories = [], categoryLoading = false, disabled, itemRef, squareItemFields = [], squareAutocomplete, userId }: Props) {
+export default function ProductCard({ item, index, missingFields, onChange, squareCategories = [], categoryLoading = false, productNameOptionsLoading = false, disabled, itemRef, squareItemFields = [], squareAutocomplete, userId }: Props) {
   const update = (updates: Partial<ConfirmItem>) => onChange(index, updates);
   const includedInPO = item.includedInPO !== false;
 
@@ -72,6 +74,7 @@ export default function ProductCard({ item, index, missingFields, onChange, squa
             missing={missingFields.has(fieldKey as RequiredField)}
             squareCategories={squareCategories}
             categoryLoading={categoryLoading}
+            productNameOptionsLoading={productNameOptionsLoading}
             fieldMetadata={fieldMetaMap[fieldKey]}
             squareAutocomplete={squareAutocomplete}
             userId={userId}

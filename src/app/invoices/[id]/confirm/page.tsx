@@ -20,6 +20,8 @@ export default function InvoiceConfirmPage() {
   const [items, setItems] = useState<ConfirmItem[]>([]);
   const [squareCategories, setSquareCategories] = useState<string[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [productNameOptionsLoading, setProductNameOptionsLoading] = useState(false);
+  const [catalogItemsByName, setCatalogItemsByName] = useState<Record<string, { sku: string; category: string; description: string; vendor: string; vendor_code: string }>>({});
   const [squareItemFields, setSquareItemFields] = useState<{ id: string; name: string; optionValues?: { id: string; name: string }[] }[]>([]);
   const [squareAutocomplete, setSquareAutocomplete] = useState<Record<string, string[]>>({ product_name: [], sku: [] });
   const [loading, setLoading] = useState(true);
@@ -52,20 +54,28 @@ export default function InvoiceConfirmPage() {
     }
   }, [invoiceId, router]);
 
+  // Load categories first (lighter API). Load autocomplete-values and items-index in parallel (name options + lookup for "add as PO only").
   useEffect(() => {
     if (!user?.id || items.length === 0) return;
     setCategoriesLoading(true);
-    Promise.all([
-      fetch(`/api/square/catalog/categories?userId=${encodeURIComponent(user.id)}`).then((r) => r.json()),
-      fetch(`/api/square/catalog/autocomplete-values?userId=${encodeURIComponent(user.id)}`).then((r) => r.json()),
-    ])
-      .then(([categoriesData, valuesData]) => {
+    setProductNameOptionsLoading(true);
+    const categoriesUrl = `/api/square/catalog/categories?userId=${encodeURIComponent(user.id)}`;
+    const autocompleteUrl = `/api/square/catalog/autocomplete-values?userId=${encodeURIComponent(user.id)}`;
+    const itemsIndexUrl = `/api/square/catalog/items-index?userId=${encodeURIComponent(user.id)}`;
+
+    fetch(categoriesUrl)
+      .then((r) => r.json())
+      .then((categoriesData) => {
         if (Array.isArray(categoriesData.categories)) {
           setSquareCategories(categoriesData.categories);
-          if (typeof console !== 'undefined' && console.log) {
-            console.log('Category autocomplete (from GET /api/square/catalog/categories):', categoriesData.categories);
-          }
         }
+      })
+      .catch(() => {})
+      .finally(() => setCategoriesLoading(false));
+
+    fetch(autocompleteUrl)
+      .then((r) => r.json())
+      .then((valuesData) => {
         const vals = valuesData?.values;
         if (vals && typeof vals === 'object') {
           const autocomplete = {
@@ -79,12 +89,31 @@ export default function InvoiceConfirmPage() {
           } as Record<string, string[]>;
           setSquareAutocomplete(autocomplete);
         }
-        if (typeof console !== 'undefined' && console.log) {
-          console.log('Vendor autocomplete: use Vendor field (focus it) → calls GET /api/vendors');
-        }
       })
       .catch(() => {})
-      .finally(() => setCategoriesLoading(false));
+      .finally(() => setProductNameOptionsLoading(false));
+
+    fetch(itemsIndexUrl)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data?.items)) {
+          const map: Record<string, { sku: string; category: string; description: string; vendor: string; vendor_code: string }> = {};
+          for (const row of data.items) {
+            const name = (row as { name?: string }).name?.trim();
+            if (name) {
+              map[name] = {
+                sku: (row as { sku?: string }).sku ?? '',
+                category: (row as { category?: string }).category ?? '',
+                description: (row as { description?: string }).description ?? '',
+                vendor: (row as { vendor?: string }).vendor ?? '',
+                vendor_code: (row as { vendor_code?: string }).vendor_code ?? '',
+              };
+            }
+          }
+          setCatalogItemsByName(map);
+        }
+      })
+      .catch(() => {});
   }, [user?.id, items.length]);
 
   const fetchSquareItemFields = useCallback(async () => {
@@ -114,10 +143,45 @@ export default function InvoiceConfirmPage() {
   const updateItem = useCallback((index: number, updates: Partial<ConfirmItem>) => {
     setItems((prev) => {
       const next = [...prev];
-      if (next[index]) next[index] = { ...next[index], ...updates };
+      const current = next[index];
+      if (!current) return next;
+
+      const newName = updates.product_name?.trim();
+      if (newName !== undefined) {
+        const lookup = catalogItemsByName[newName];
+        if (lookup) {
+          next[index] = {
+            ...current,
+            ...updates,
+            sku: lookup.sku,
+            category: lookup.category,
+            description: lookup.description,
+            vendor: lookup.vendor,
+            vendor_code: lookup.vendor_code,
+            addAsPoOnly: true,
+          };
+          return next;
+        }
+        if (current.addAsPoOnly) {
+          next[index] = {
+            ...current,
+            ...updates,
+            sku: '',
+            category: '',
+            description: '',
+            vendor: '',
+            vendor_id: undefined,
+            vendor_code: '',
+            addAsPoOnly: false,
+          };
+          return next;
+        }
+      }
+
+      next[index] = { ...current, ...updates };
       return next;
     });
-  }, []);
+  }, [catalogItemsByName]);
 
   const newProducts = items.filter((i) => i.status === 'unmatched');
   const existingProducts = items.filter((i) => i.status === 'matched');
@@ -163,9 +227,6 @@ export default function InvoiceConfirmPage() {
     setError('');
 
     try {
-      if (typeof console !== 'undefined' && console.log) {
-        console.log('Submitting item draft (items):', includedItems.map((i) => ({ product_name: i.product_name, customAttributes: i.customAttributes })));
-      }
       const res = await fetch('/api/invoices/purchase-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -233,6 +294,7 @@ export default function InvoiceConfirmPage() {
                     onChange={updateItem}
                     squareCategories={squareCategories}
                     categoryLoading={categoriesLoading}
+                    productNameOptionsLoading={productNameOptionsLoading}
                     disabled={submitting}
                     itemRef={(el) => { itemRefs.current[i] = el; }}
                     squareItemFields={squareItemFields}
@@ -260,6 +322,7 @@ export default function InvoiceConfirmPage() {
                     onChange={updateItem}
                     squareCategories={squareCategories}
                     categoryLoading={categoriesLoading}
+                    productNameOptionsLoading={productNameOptionsLoading}
                     disabled={submitting}
                     itemRef={(el) => { itemRefs.current[i] = el; }}
                     squareItemFields={squareItemFields}

@@ -56,7 +56,6 @@ export async function GET(request: Request) {
     } while (cursor);
 
     vendors.sort((a, b) => a.name.localeCompare(b.name));
-    console.log('Vendors from Square:', JSON.stringify(vendors, null, 2));
     return NextResponse.json({ vendors });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
