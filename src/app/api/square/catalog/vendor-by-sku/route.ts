@@ -139,7 +139,8 @@ export async function GET(request: Request) {
         const variationSku = (vdata?.sku ?? '').trim().toLowerCase();
         if (variationSku !== skuLower) continue;
         variationId = obj.id;
-        variationItemId = vdata?.itemId ?? (vdata as { item_id?: string })?.item_id;
+        // `itemVariationData` can be snake_case or camelCase depending on SDK response mapping.
+        variationItemId = (vdata as any)?.itemId ?? (vdata as any)?.item_id;
         break;
       }
       if (variationId) break;
@@ -184,10 +185,10 @@ export async function GET(request: Request) {
         }>;
         for (const vi of viObjects) {
           const data = vi.itemVariationVendorInfoData ?? vi.item_variation_vendor_info_data;
-          const itemVarId = data?.itemVariationId ?? data?.item_variation_id;
+          const itemVarId = (data as any)?.itemVariationId ?? (data as any)?.item_variation_id;
           if (itemVarId !== variationId) continue;
-          const vendorId = (data?.vendorId ?? data?.vendor_id ?? '').trim();
-          const vendorCodeFromVi = (data?.sku ?? '').trim();
+          const vendorId = ((data as any)?.vendorId ?? (data as any)?.vendor_id ?? '').trim();
+          const vendorCodeFromVi = ((data as any)?.sku ?? (data as any)?.SKU ?? '').trim();
           if (vendorId) {
             const { result: vResult } = await client.vendorsApi.retrieveVendor(vendorId);
             const name = (vResult.vendor?.name ?? '').trim();
