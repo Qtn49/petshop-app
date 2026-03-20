@@ -1,87 +1,83 @@
 'use client';
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Plus, Check, Trash2, Calendar, Eye, EyeOff } from 'lucide-react';
 
-type Task = {
+export type Task = {
   id: string;
   title: string;
   completed: boolean;
   due_date?: string | null;
 };
 
-export default function TodoList({
-  tasks,
-  onTasksChange,
-  userId,
-}: {
+type Props = {
   tasks: Task[];
-  onTasksChange: (tasks: Task[]) => void;
   userId?: string;
-}) {
+} & (
+  | { onAddTask: (title: string, dueDate?: string | null) => void; onToggleTask: (id: string) => void; onDeleteTask: (id: string) => void; onTasksChange?: never }
+  | { onTasksChange: (tasks: Task[]) => void; onAddTask?: never; onToggleTask?: never; onDeleteTask?: never }
+);
+
+function TodoListInner(props: Props) {
+  const { tasks, userId } = props;
   const [newTask, setNewTask] = useState('');
   const [newDueDate, setNewDueDate] = useState('');
   const [showCompleted, setShowCompleted] = useState(false);
 
   const addTask = async () => {
     if (!newTask.trim()) return;
-    const task: Task = {
-      id: crypto.randomUUID(),
-      title: newTask.trim(),
-      completed: false,
-      due_date: newDueDate || null,
-    };
-    setNewTask('');
-    setNewDueDate('');
-    onTasksChange([...tasks, task]);
-
-    if (userId) {
-      try {
-        await fetch('/api/tasks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId,
-            title: task.title,
-            dueDate: task.due_date,
-          }),
-        });
-      } catch {
-        // Silent fail
+    if (props.onAddTask) {
+      props.onAddTask(newTask.trim(), newDueDate || null);
+    } else if (props.onTasksChange) {
+      const task: Task = {
+        id: crypto.randomUUID(),
+        title: newTask.trim(),
+        completed: false,
+        due_date: newDueDate || null,
+      };
+      props.onTasksChange([...tasks, task]);
+      if (userId) {
+        try {
+          await fetch('/api/tasks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, title: task.title, dueDate: task.due_date }),
+          });
+        } catch {}
       }
     }
+    setNewTask('');
+    setNewDueDate('');
   };
 
   const toggleTask = async (id: string) => {
-    const updated = tasks.map((t) =>
-      t.id === id ? { ...t, completed: !t.completed } : t
-    );
-    onTasksChange(updated);
-
-    if (userId) {
-      const task = tasks.find((t) => t.id === id);
-      if (task) {
-        try {
-          await fetch(`/api/tasks/${id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ completed: !task.completed }),
-          });
-        } catch {
-          // Silent fail
+    if (props.onToggleTask) {
+      props.onToggleTask(id);
+    } else if (props.onTasksChange) {
+      const updated = tasks.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t));
+      props.onTasksChange(updated);
+      if (userId) {
+        const task = tasks.find((t) => t.id === id);
+        if (task) {
+          try {
+            await fetch(`/api/tasks/${id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ completed: !task.completed }),
+            });
+          } catch {}
         }
       }
     }
   };
 
   const deleteTask = async (id: string) => {
-    onTasksChange(tasks.filter((t) => t.id !== id));
-
-    if (userId) {
-      try {
-        await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
-      } catch {
-        // Silent fail
+    if (props.onDeleteTask) {
+      props.onDeleteTask(id);
+    } else if (props.onTasksChange) {
+      props.onTasksChange(tasks.filter((t) => t.id !== id));
+      if (userId) {
+        try { await fetch(`/api/tasks/${id}`, { method: 'DELETE' }); } catch {}
       }
     }
   };
@@ -105,10 +101,7 @@ export default function TodoList({
       <div className="p-4 flex flex-col flex-1 min-h-0">
         <ul className="space-y-2 flex-1 overflow-y-auto min-h-0 mb-4">
           {visibleTasks.map((task) => (
-            <li
-              key={task.id}
-              className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 group"
-            >
+            <li key={task.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 group">
               <button
                 onClick={() => toggleTask(task.id)}
                 className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
@@ -118,15 +111,14 @@ export default function TodoList({
                 {task.completed && <Check className="w-3 h-3" />}
               </button>
               <div className="flex-1 min-w-0">
-                <span
-                  className={`block ${task.completed ? 'line-through text-slate-500' : 'text-slate-800'}`}
-                >
+                <span className={`block ${task.completed ? 'line-through text-slate-500' : 'text-slate-800'}`}>
                   {task.title}
                 </span>
                 {task.due_date && (
-                  <span className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
+                  <span className="flex items-center gap-1 text-xs text-primary-500 mt-0.5">
                     <Calendar className="w-3 h-3" />
                     {task.due_date}
+                    <span className="text-[10px] text-primary-400">on calendar</span>
                   </span>
                 )}
               </div>
@@ -153,13 +145,27 @@ export default function TodoList({
             placeholder="Add a task..."
             className="flex-1 px-3 py-2 rounded-lg border border-slate-200 focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none"
           />
-          <input
-            type="date"
-            value={newDueDate}
-            onChange={(e) => setNewDueDate(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-slate-200 focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none text-sm text-slate-600 w-36"
-            title="Due date (optional)"
-          />
+          <div className="relative">
+            <input
+              type="date"
+              value={newDueDate}
+              onChange={(e) => setNewDueDate(e.target.value)}
+              className={`px-3 py-2 rounded-lg border focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none text-sm w-36 ${
+                newDueDate ? 'border-primary-300 text-slate-700' : 'border-slate-200 text-slate-400'
+              }`}
+              title="Due date (optional) — adds task to calendar"
+            />
+            {newDueDate && (
+              <button
+                type="button"
+                onClick={() => setNewDueDate('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50"
+                title="Remove date"
+              >
+                <span className="text-xs font-bold leading-none">&times;</span>
+              </button>
+            )}
+          </div>
           <button
             onClick={addTask}
             className="p-2 rounded-lg bg-primary-600 text-white hover:bg-primary-700"
@@ -171,3 +177,5 @@ export default function TodoList({
     </div>
   );
 }
+
+export default memo(TodoListInner);

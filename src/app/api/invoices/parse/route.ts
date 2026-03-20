@@ -126,17 +126,37 @@ export async function POST(request: Request) {
     const preMatched =
       organizationId && supplierName
         ? await preMatchBarcodes(supabase, organizationId, supplierName, rawText)
-        : new Map<string, { name: string; square_variation_id: string | null }>();
+        : new Map<string, { name: string; square_variation_id: string | null; last_price: string | number | null }>();
     const preMatchedBarcodes = new Set(preMatched.keys());
     const context = preMatchedBarcodes.size > 0 ? { preMatchedBarcodes } : undefined;
 
     const { items } = await parseInvoiceText(rawText, context);
+    // Apply learned overrides without removing any items.
+    // If we recognize a barcode for this supplier, we trust the learned name
+    // and last_price for that barcode.
+    const finalItems = items.map((it) => {
+      const code = it.code ?? null;
+      if (!code) return it;
+      const known = preMatched.get(code);
+      if (!known) return it;
+      const overrideName = known.name ?? it.name;
+      const overridePriceRaw = known.last_price;
+      const overridePrice =
+        overridePriceRaw != null && !Number.isNaN(Number(overridePriceRaw))
+          ? Number(overridePriceRaw)
+          : null;
+      return {
+        ...it,
+        name: overrideName,
+        price: overridePrice != null && overridePrice > 0 ? overridePrice : it.price,
+      };
+    });
 
-    if (items.length > 0) {
-      console.log('📋 Parsed items:', JSON.stringify(items, null, 2));
+    if (finalItems.length > 0) {
+      console.log('📋 Parsed items (post-learn overrides):', JSON.stringify(finalItems, null, 2));
       console.log(sep + '\n');
 
-      const verification = await verifyParsedItemsWithAI(rawText, items);
+      const verification = await verifyParsedItemsWithAI(rawText, finalItems);
       if (verification) {
         if (verification.valid) {
           console.log('✅ AI verification: passed');
@@ -146,6 +166,26 @@ export async function POST(request: Request) {
             console.log('   Missing items:', verification.missingItems);
           }
         }
+
+        // Apply suggestedCorrections non-destructively.
+        // Never remove items: only update fields on existing indices.
+        if (verification.suggestedCorrections?.length) {
+          for (const corr of verification.suggestedCorrections) {
+            const idx = corr.index;
+            const item = finalItems[idx];
+            if (!item) continue;
+            if (corr.field === 'name') {
+              (finalItems[idx] as typeof item).name = corr.suggested;
+            } else if (corr.field === 'price') {
+              const p = parseFloat(String(corr.suggested).replace(/[^0-9.\-]/g, ''));
+              if (!Number.isNaN(p) && p > 0) (finalItems[idx] as typeof item).price = p;
+            } else if (corr.field === 'quantity') {
+              const q = parseInt(String(corr.suggested).replace(/[^0-9\-]/g, ''), 10);
+              if (!Number.isNaN(q) && q > 0) (finalItems[idx] as typeof item).quantity = q;
+            }
+          }
+        }
+
         console.log(sep + '\n');
       }
     } else {
@@ -154,10 +194,17 @@ export async function POST(request: Request) {
     }
 
     const aiPredictionJson = JSON.stringify(
-      items.map((i) => ({ code: i.code, name: i.name, quantity: i.quantity, price: i.price }))
+      finalItems.map((i) => ({ code: i.code, name: i.name, quantity: i.quantity, price: i.price }))
     );
 
-    for (const item of items) {
+    const poVendorName = supplierName ?? null;
+    const firstLines = rawText.split(/\r?\n/).slice(0, 40).join('\n');
+    const shipToMatch = firstLines.match(/(?:ship\s+to|deliver\s+to|bill\s+to|sold\s+to)\s*:?\s*([^\n]+)/im);
+    const poShipTo = shipToMatch?.[1]?.trim().replace(/\s+/g, ' ').slice(0, 500) ?? null;
+    const dateMatch = firstLines.match(/(?:date|expected|due)\s*:?\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})/im);
+    const poExpectedOn = dateMatch?.[1] ?? null;
+
+    for (const item of finalItems) {
       await supabase.from('invoice_items').insert({
         invoice_id: invoiceId,
         skn: item.code ?? null,
@@ -175,11 +222,14 @@ export async function POST(request: Request) {
         status: 'parsed',
         raw_text: rawText,
         ai_prediction_json: aiPredictionJson as unknown,
+        po_vendor_name: poVendorName,
+        po_ship_to: poShipTo,
+        po_expected_on: poExpectedOn,
       })
       .eq('id', invoiceId);
 
     return NextResponse.json({
-      items: items.map((i) => ({
+      items: finalItems.map((i) => ({
         skn: i.code ?? '',
         product_name: i.name,
         quantity: i.quantity,

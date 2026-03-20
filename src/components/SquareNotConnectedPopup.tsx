@@ -3,15 +3,21 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, X, Settings } from 'lucide-react';
 
 const DISMISS_KEY = 'petshop_square_popup_dismissed';
+
+async function fetchSquareConnection(userId: string) {
+  const res = await fetch(`/api/square/connection?userId=${encodeURIComponent(userId)}`);
+  if (!res.ok) return { connected: false };
+  return res.json();
+}
 
 export default function SquareNotConnectedPopup() {
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const [connected, setConnected] = useState<boolean | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const isSettingsPage = pathname === '/settings';
 
@@ -19,41 +25,25 @@ export default function SquareNotConnectedPopup() {
     if (typeof window !== 'undefined') {
       try {
         setDismissed(sessionStorage.getItem(DISMISS_KEY) === '1');
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
   }, []);
 
-  useEffect(() => {
-    if (!user?.id || dismissed) {
-      setConnected(null);
-      return;
-    }
-    let cancelled = false;
-    fetch(`/api/square/connection?userId=${encodeURIComponent(user.id)}`, { cache: 'no-store' })
-      .then((res) => res.json())
-      .then((data) => {
-        if (!cancelled) setConnected(!!data?.connected);
-      })
-      .catch(() => {
-        if (!cancelled) setConnected(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id, dismissed]);
+  const { data } = useQuery({
+    queryKey: ['squareConnection', user?.id],
+    queryFn: () => fetchSquareConnection(user!.id),
+    enabled: !!user?.id && !dismissed,
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const connected = data?.connected ?? null;
 
   const goToSettings = useCallback(() => {
     router.push('/settings');
   }, [router]);
 
   const dismiss = useCallback(() => {
-    try {
-      sessionStorage.setItem(DISMISS_KEY, '1');
-    } catch {
-      // ignore
-    }
+    try { sessionStorage.setItem(DISMISS_KEY, '1'); } catch {}
     setDismissed(true);
   }, []);
 

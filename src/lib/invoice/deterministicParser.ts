@@ -106,12 +106,21 @@ export function isLikelyItemStart(line: string, nextLine?: string): boolean {
   const repCode = /^[A-Z]{2,4}\d{2,4}$/;
   if (repCode.test(t)) return false;
 
-  if (/^\d{3,10}[A-Za-z\s]/.test(t)) return true;
-  if (/^[A-Z]{1,5}\d{1,8}[A-Za-z\s]/.test(t)) return true;
-  if (/^\d{3,8}$/.test(t) && nextLine && nextLine.trim().length > 4 && /[A-Za-z]/.test(nextLine)) return true;
-  if (/^[A-Z]{1,5}\d{1,8}$/.test(t) && nextLine && nextLine.trim().length > 4 && /[A-Za-z]/.test(nextLine)) return true;
+  // Product lines are usually: SKU code + description + barcode (12-13 digits).
+  // Address/header fragments can start with numbers, so we avoid relying on
+  // "numbers + letters" heuristics alone.
+  // Use digit-only boundaries so we still match barcodes even when they are
+  // glued to letters like "...SMALL035585111315...".
+  const hasBarcodeLikeNumber = /(?:^|\D)\d{12,13}/.test(t);
+  const hasLetter = /[A-Za-z]/.test(t);
+  const hasSkuPrefix = /^[A-Z]{1,6}\d{1,8}/.test(t); // e.g. KDT3, KDKP51
 
-  if (/^\d{12,14}$/.test(t)) return false;
+  if (hasBarcodeLikeNumber && hasLetter) return true;
+  if (hasSkuPrefix && hasLetter) return true;
+
+  // Avoid treating pure short numbers as item blocks.
+  if (/^\d{3,10}$/.test(t)) return false;
+
   return false;
 }
 
@@ -166,14 +175,34 @@ function computeConfidence(item: ParsedInvoiceItemRich): number {
  * Generic barcode extraction: 8-14 digits, exclude dates/totals
  */
 export function findLikelyBarcode(text: string): string | null {
-  const candidates = text.match(/\b\d{8,14}\b/g);
-  if (!candidates || candidates.length === 0) return null;
+  // OCR often glues the barcode digits directly to the following price digits
+  // (e.g. "...SMALL035585111315336.62..."). To handle that, detect a
+  // 11-14 digit sequence immediately followed by a decimal price.
+  //
+  // Group 1 is the barcode, Group 2 starts the price (we ignore it).
+  // Prefer exact 12-digit barcodes first to avoid greedy partial overlap
+  // with the following price digits.
+  const collectGroup1 = (re: RegExp): string[] => {
+    // Avoid spreading a RegExp iterator (requires downlevelIteration).
+    const out: string[] = [];
+    const r = new RegExp(re.source, re.flags);
+    let m: RegExpExecArray | null = null;
+    while ((m = r.exec(text)) !== null) {
+      out.push(m[1]);
+      // Safety: prevent infinite loops on zero-width matches.
+      if (m.index === r.lastIndex) r.lastIndex++;
+    }
+    return out;
+  };
 
-  for (const c of candidates) {
-    if (c.length >= 12 && c.length <= 14) return c;
-    const n = parseInt(c, 10);
-    if (n > 100000000 && n < 99999999999999) return c;
-  }
+  const matches12 = collectGroup1(/(?:^|\D)(\d{12})(\d{1,4}\.\d{2})/g);
+  if (matches12.length > 0) return matches12[0];
+
+  const matches13 = collectGroup1(/(?:^|\D)(\d{13})(\d{1,4}\.\d{2})/g);
+  if (matches13.length > 0) return matches13[0];
+
+  // Fallback: any 12-13 digit run.
+  const candidates = collectGroup1(/(?:^|\D)(\d{12,13})/g);
   return candidates[0] ?? null;
 }
 
@@ -203,14 +232,25 @@ export function parseItemBlock(blockLines: string[]): ParsedInvoiceItemRich | nu
   if (codeMatch) itemCode = codeMatch[1];
 
   barcode = findLikelyBarcode(blockText);
+  const numericText = barcode
+    ? // Strip the barcode digits so price decimals like "...336.62" don't get
+      // matched as a huge "...<barcode><price>.xx" number.
+      blockText.replace(new RegExp(escapeRe(barcode), 'g'), ' ')
+    : blockText;
 
-  const decimals = blockText.match(/\d+\.\d{2}(?=\D|$)/g);
+  // OCR frequently glues adjacent numeric fields (e.g. "...336.620.00...").
+  // Don't require a non-digit after the 2 decimals; capture the decimals anyway
+  // and let the block-level filtering choose the right ones.
+  const decimals = numericText.match(/\d+\.\d{2}/g);
   if (decimals && decimals.length >= 1) {
     const parsed = decimals.map((d) => parseFloat(d)).filter((n) => !Number.isNaN(n) && n > 0 && n < 100000);
     const sorted = [...parsed].sort((a, b) => a - b);
-    unitPrice = sorted[0] ?? null;
-    netPrice = sorted[1] ?? unitPrice;
-    subtotal = parsed.length >= 2 ? Math.max(...parsed) : netPrice;
+    // When fields are glued by OCR, the safest assumption is:
+    // - unit price and line total are among the largest values present
+    // - net price / line total is usually the 2nd-largest number
+    unitPrice = sorted[sorted.length - 1] ?? null;
+    netPrice = sorted.length >= 2 ? sorted[sorted.length - 2] : unitPrice;
+    subtotal = Math.max(...parsed);
   }
 
   for (const u of UNIT_LABELS) {
@@ -275,7 +315,8 @@ function extractName(blockText: string, itemCode: string | null, barcode: string
   text = text
     .replace(/\d+\.\d{2,}\b/g, ' ')
     .replace(/\b\d{1,4}\s*(?:Each|Set|Box|Pack|Packet)/gi, ' ')
-    .replace(/\b\d{8,14}\b/g, ' ')
+    // Remove barcodes even when adjacent to letters (no whitespace in OCR).
+    .replace(/(^|\D)(\d{12,13})/g, '$1 ')
     .replace(/[A-Z]{2,4}\d{2,4}\b/g, ' ')
     .replace(/\d{5,}[\d.]*/g, ' ')
     .replace(/\s+/g, ' ')

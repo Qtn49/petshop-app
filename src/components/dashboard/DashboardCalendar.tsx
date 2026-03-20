@@ -159,7 +159,7 @@ export default function DashboardCalendar({
         </table>
       </div>
       {selectedDate && (
-        <DayTasksPanel date={selectedDate} userId={userId} />
+        <DayTasksPanel date={selectedDate} userId={userId} todoTasks={tasks} />
       )}
     </div>
   );

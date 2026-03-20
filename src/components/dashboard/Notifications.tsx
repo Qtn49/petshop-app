@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import { Bell, Check } from 'lucide-react';
 
 type Notification = {
@@ -10,30 +11,31 @@ type Notification = {
   read: boolean;
 };
 
-export default function Notifications({
-  notifications,
-  onNotificationsChange,
-  userId,
-}: {
+type Props = {
   notifications: Notification[];
-  onNotificationsChange: (n: Notification[]) => void;
   userId?: string;
-}) {
-  const markAsRead = async (id: string) => {
-    const updated = notifications.map((n) =>
-      n.id === id ? { ...n, read: true } : n
-    );
-    onNotificationsChange(updated);
+} & (
+  | { onMarkAsRead: (id: string) => void; onNotificationsChange?: never }
+  | { onNotificationsChange: (n: Notification[]) => void; onMarkAsRead?: never }
+);
 
-    if (userId) {
-      try {
-        await fetch(`/api/notifications/${id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ read: true }),
-        });
-      } catch {
-        // Silent fail
+function NotificationsInner(props: Props) {
+  const { notifications, userId } = props;
+
+  const markAsRead = async (id: string) => {
+    if (props.onMarkAsRead) {
+      props.onMarkAsRead(id);
+    } else if (props.onNotificationsChange) {
+      const updated = notifications.map((n) => (n.id === id ? { ...n, read: true } : n));
+      props.onNotificationsChange(updated);
+      if (userId) {
+        try {
+          await fetch(`/api/notifications/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ read: true }),
+          });
+        } catch {}
       }
     }
   };
@@ -83,3 +85,5 @@ export default function Notifications({
     </div>
   );
 }
+
+export default memo(NotificationsInner);

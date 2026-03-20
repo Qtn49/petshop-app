@@ -5,6 +5,7 @@ export type SupplierProduct = {
   barcode: string;
   supplier_product_name: string;
   square_variation_id: string | null;
+  last_price: string | number | null;
 };
 
 /**
@@ -30,13 +31,14 @@ export async function getSupplierProducts(
 
   const { data: products } = await supabase
     .from('supplier_products')
-    .select('barcode, supplier_product_name, square_variation_id')
+    .select('barcode, supplier_product_name, square_variation_id, last_price')
     .eq('supplier_id', supplier.id);
 
   return (products ?? []).map((p) => ({
     barcode: p.barcode,
     supplier_product_name: p.supplier_product_name,
     square_variation_id: p.square_variation_id ?? null,
+    last_price: (p as { last_price?: string | number | null }).last_price ?? null,
   }));
 }
 
@@ -49,14 +51,14 @@ export async function preMatchBarcodes(
   organizationId: string,
   supplierName: string | null,
   rawText: string
-): Promise<Map<string, { name: string; square_variation_id: string | null }>> {
+): Promise<Map<string, { name: string; square_variation_id: string | null; last_price: string | number | null }>> {
   const products = await getSupplierProducts(
     supabase,
     organizationId,
     supplierName
   );
   const barcodesInText = extractBarcodes(rawText);
-  const known = new Map<string, { name: string; square_variation_id: string | null }>();
+  const known = new Map<string, { name: string; square_variation_id: string | null; last_price: string | number | null }>();
 
   for (const b of barcodesInText) {
     const prod = products.find((p) => p.barcode === b);
@@ -64,6 +66,7 @@ export async function preMatchBarcodes(
       known.set(b, {
         name: prod.supplier_product_name,
         square_variation_id: prod.square_variation_id,
+        last_price: prod.last_price,
       });
     }
   }

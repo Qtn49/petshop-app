@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { memo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import DashboardCalendar from '@/components/dashboard/DashboardCalendar';
@@ -8,86 +8,63 @@ import TodoList from '@/components/dashboard/TodoList';
 import SupplierLinks from '@/components/dashboard/SupplierLinks';
 import Notifications from '@/components/dashboard/Notifications';
 import WidgetCard from '@/components/dashboard/WidgetCard';
+import { WidgetSkeleton } from '@/components/ui/Skeleton';
 import { ExternalLink, FileText, ChevronRight } from 'lucide-react';
+import { useTasks } from '@/hooks/use-tasks';
+import { useNotifications } from '@/hooks/use-notifications';
+import { useInvoices } from '@/hooks/use-invoices';
+import { useSuppliers } from '@/hooks/use-suppliers';
 
-type InvoiceRow = { id: string; file_name: string; status: string; created_at: string };
-type Task = { id: string; title: string; completed: boolean; due_date?: string | null };
+const RecentInvoices = memo(function RecentInvoices({
+  invoices,
+  isLoading,
+}: {
+  invoices: { id: string; file_name: string; status: string }[];
+  isLoading: boolean;
+}) {
+  if (isLoading) return <WidgetSkeleton />;
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-3 h-full flex flex-col">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="font-semibold text-slate-800 text-sm">Recent Invoices</h2>
+        <Link
+          href="/invoices/list"
+          className="text-primary-600 hover:text-primary-700 text-sm font-medium flex items-center gap-1"
+        >
+          View all
+          <ChevronRight className="w-4 h-4" />
+        </Link>
+      </div>
+      {invoices.length === 0 ? (
+        <p className="text-slate-500 text-sm">No invoices yet.</p>
+      ) : (
+        <ul className="space-y-1 flex-1 min-h-0 overflow-auto">
+          {invoices.slice(0, 8).map((inv) => (
+            <li key={inv.id}>
+              <Link
+                href={`/invoices/${inv.id}`}
+                className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 transition group"
+              >
+                <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                <span className="text-sm truncate flex-1 min-w-0">{inv.file_name}</span>
+                <span className="text-xs text-slate-500 shrink-0">{inv.status}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+});
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [supplierLinks, setSupplierLinks] = useState<{ id: string; name: string; url: string }[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [notifications, setNotifications] = useState<{ id: string; title: string; message: string | null; type: string; read: boolean }[]>([]);
-  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
+  const userId = user?.id;
 
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const mockLinks = [
-      { id: '1', name: 'Aquarium Depot', url: 'https://aquariumdepot.com' },
-      { id: '2', name: 'Pet Supplies Plus', url: 'https://petsuppliesplus.com' },
-      { id: '3', name: 'Fish World Wholesale', url: 'https://fishworldwholesale.com' },
-      { id: '4', name: 'Reptile Kingdom', url: 'https://reptilekingdom.com' },
-      { id: '5', name: 'Tropical Fish Co', url: 'https://tropicalfishco.com' },
-    ];
-    const mockTasks: Task[] = [
-      { id: '1', title: 'Order fish food', completed: false, due_date: null },
-      { id: '2', title: 'Check tank levels', completed: true, due_date: null },
-      { id: '3', title: 'Restock aquarium filters', completed: false, due_date: null },
-      { id: '4', title: 'Schedule vet appointment for store pets', completed: false, due_date: null },
-      { id: '5', title: 'Update supplier price list', completed: true, due_date: null },
-      { id: '6', title: 'Clean display tanks', completed: false, due_date: null },
-      { id: '7', title: 'Order live plants', completed: false, due_date: null },
-    ];
-    const mockNotifications = [
-      { id: '1', title: 'Welcome', message: 'Get started with your dashboard', type: 'info', read: false },
-      { id: '2', title: 'Low Stock Alert', message: 'Fish food running low in warehouse', type: 'warning', read: false },
-      { id: '3', title: 'Order Shipped', message: 'Supplier order #4521 is on its way', type: 'success', read: true },
-      { id: '4', title: 'New Supplier', message: 'Aquarium Depot has new products available', type: 'info', read: false },
-      { id: '5', title: 'Reminder', message: 'Tank maintenance due tomorrow', type: 'warning', read: false },
-    ];
-
-    const fetchData = async () => {
-      try {
-        const [linksRes, tasksRes, notifRes, invoicesRes] = await Promise.all([
-          fetch(`/api/suppliers?userId=${user.id}`),
-          fetch(`/api/tasks?userId=${user.id}`),
-          fetch(`/api/notifications?userId=${user.id}`),
-          fetch(`/api/invoices?userId=${user.id}`),
-        ]);
-
-        if (invoicesRes.ok) {
-          const data = await invoicesRes.json();
-          setInvoices(data.invoices?.slice(0, 8) ?? []);
-        }
-
-        if (linksRes.ok) {
-          const data = await linksRes.json();
-          setSupplierLinks(data.links?.length ? data.links : mockLinks);
-        } else {
-          setSupplierLinks(mockLinks);
-        }
-        if (tasksRes.ok) {
-          const data = await tasksRes.json();
-          setTasks(data.tasks?.length ? data.tasks : mockTasks);
-        } else {
-          setTasks(mockTasks);
-        }
-        if (notifRes.ok) {
-          const data = await notifRes.json();
-          setNotifications(data.notifications?.length ? data.notifications : mockNotifications);
-        } else {
-          setNotifications(mockNotifications);
-        }
-      } catch {
-        setSupplierLinks(mockLinks);
-        setTasks(mockTasks);
-        setNotifications(mockNotifications);
-      }
-    };
-
-    fetchData();
-  }, [user?.id]);
+  const { tasks, isLoading: tasksLoading, addTask, toggleTask, deleteTask } = useTasks(userId);
+  const { notifications, isLoading: notifLoading, markAsRead } = useNotifications(userId);
+  const { invoices, isLoading: invoicesLoading } = useInvoices(userId);
+  const { links, isLoading: linksLoading } = useSuppliers(userId);
 
   return (
     <div className="h-[calc(100vh-5rem)] flex flex-col gap-3 overflow-hidden min-h-0">
@@ -97,12 +74,10 @@ export default function DashboardPage() {
       </header>
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-4 lg:grid-rows-2 gap-3 overflow-hidden">
-        {/* Calendar - top left, 2 cols */}
         <WidgetCard className="lg:col-span-2 lg:row-span-1 min-h-0 overflow-auto">
-          <DashboardCalendar userId={user?.id} tasks={tasks} />
+          {tasksLoading ? <WidgetSkeleton /> : <DashboardCalendar userId={userId} tasks={tasks} />}
         </WidgetCard>
 
-        {/* Quick Actions - top right */}
         <WidgetCard className="lg:col-span-1 lg:row-span-1 min-h-0 overflow-auto">
           <div className="bg-white rounded-xl border border-slate-200 p-3 h-full">
             <h2 className="font-semibold text-slate-800 mb-2 text-sm">Quick Actions</h2>
@@ -124,53 +99,38 @@ export default function DashboardPage() {
           </div>
         </WidgetCard>
 
-        {/* Notifications - top right */}
         <WidgetCard className="lg:col-span-1 lg:row-span-1 min-h-0 overflow-auto">
-          <Notifications notifications={notifications} onNotificationsChange={setNotifications} userId={user?.id} />
+          {notifLoading ? (
+            <WidgetSkeleton />
+          ) : (
+            <Notifications
+              notifications={notifications}
+              onMarkAsRead={(id) => markAsRead.mutate(id)}
+              userId={userId}
+            />
+          )}
         </WidgetCard>
 
-        {/* To-Do List - bottom left */}
         <WidgetCard className="lg:col-span-2 lg:row-span-1 min-h-0 overflow-auto">
-          <TodoList tasks={tasks} onTasksChange={setTasks} userId={user?.id} />
+          {tasksLoading ? (
+            <WidgetSkeleton />
+          ) : (
+            <TodoList
+              tasks={tasks}
+              onAddTask={(title, dueDate) => addTask.mutate({ title, dueDate })}
+              onToggleTask={(id) => toggleTask.mutate(id)}
+              onDeleteTask={(id) => deleteTask.mutate(id)}
+              userId={userId}
+            />
+          )}
         </WidgetCard>
 
-        {/* Supplier Links - bottom right */}
         <WidgetCard className="lg:col-span-1 lg:row-span-1 min-h-0 overflow-auto">
-          <SupplierLinks links={supplierLinks} userId={user?.id} />
+          {linksLoading ? <WidgetSkeleton /> : <SupplierLinks links={links} userId={userId} />}
         </WidgetCard>
 
-        {/* Recent Invoices */}
         <WidgetCard className="lg:col-span-1 lg:row-span-1 min-h-0 overflow-auto">
-          <div className="bg-white rounded-xl border border-slate-200 p-3 h-full flex flex-col">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="font-semibold text-slate-800 text-sm">Recent Invoices</h2>
-              <Link
-                href="/invoices/list"
-                className="text-primary-600 hover:text-primary-700 text-sm font-medium flex items-center gap-1"
-              >
-                View all
-                <ChevronRight className="w-4 h-4" />
-              </Link>
-            </div>
-            {invoices.length === 0 ? (
-              <p className="text-slate-500 text-sm">No invoices yet.</p>
-            ) : (
-              <ul className="space-y-1 flex-1 min-h-0 overflow-auto">
-                {invoices.map((inv) => (
-                  <li key={inv.id}>
-                    <Link
-                      href={`/invoices/${inv.id}`}
-                      className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 transition group"
-                    >
-                      <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                      <span className="text-sm truncate flex-1 min-w-0">{inv.file_name}</span>
-                      <span className="text-xs text-slate-500 shrink-0">{inv.status}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          <RecentInvoices invoices={invoices} isLoading={invoicesLoading} />
         </WidgetCard>
       </div>
     </div>

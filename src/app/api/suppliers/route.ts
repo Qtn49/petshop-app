@@ -11,7 +11,7 @@ export async function GET(request: Request) {
 
   const { data, error } = await supabase
     .from('supplier_links')
-    .select('*')
+    .select('id, name, url')
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
 

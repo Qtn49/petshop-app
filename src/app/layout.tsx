@@ -3,6 +3,7 @@ import './globals.css';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { CalculatorProvider } from '@/contexts/CalculatorContext';
 import { SidebarProvider } from '@/contexts/SidebarContext';
+import QueryProvider from '@/lib/query-provider';
 import SessionReturnTracker from '@/components/SessionReturnTracker';
 
 export const metadata: Metadata = {
@@ -18,14 +19,16 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased font-sans">
-        <AuthProvider>
-          <SidebarProvider>
-            <CalculatorProvider>
-            <SessionReturnTracker />
-            {children}
-          </CalculatorProvider>
-          </SidebarProvider>
-        </AuthProvider>
+        <QueryProvider>
+          <AuthProvider>
+            <SidebarProvider>
+              <CalculatorProvider>
+                <SessionReturnTracker />
+                {children}
+              </CalculatorProvider>
+            </SidebarProvider>
+          </AuthProvider>
+        </QueryProvider>
       </body>
     </html>
   );

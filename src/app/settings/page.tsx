@@ -215,8 +215,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (user?.role === 'admin') {
-      fetchOrganization();
-      fetchUsers();
+      Promise.all([fetchOrganization(), fetchUsers()]);
     } else {
       setOrganizationLoading(false);
       setUsersLoading(false);

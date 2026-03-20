@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useQuery } from '@tanstack/react-query';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
+import { ListSkeleton } from '@/components/ui/Skeleton';
 import { Plus, Fish, ChevronRight } from 'lucide-react';
 
 type Tank = {
@@ -14,32 +15,21 @@ type Tank = {
   notes: string | null;
 };
 
-const DEFAULT_TANKS: Tank[] = [
-  { id: '1', name: 'Display Tank 1', fish_species: 'Neon Tetra', fish_count: 12, notes: 'Main store display' },
-  { id: '2', name: 'Display Tank 2', fish_species: 'Guppy', fish_count: 8, notes: 'Breeding pair' },
-  { id: '3', name: 'Reptile Section', fish_species: null, fish_count: 0, notes: 'Holds reptiles, not fish' },
-  { id: '4', name: 'Quarantine Tank', fish_species: 'Mixed', fish_count: 5, notes: 'New arrivals' },
-  { id: '5', name: 'Cichlid Tank', fish_species: 'African Cichlid', fish_count: 6, notes: 'pH 8.0' },
-];
+async function fetchTanks(userId: string): Promise<Tank[]> {
+  const res = await fetch(`/api/tanks?userId=${userId}`);
+  if (!res.ok) return [];
+  const d = await res.json();
+  return d.tanks ?? [];
+}
 
 export default function AquariumsPage() {
   const { user } = useAuth();
-  const [tanks, setTanks] = useState<Tank[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!user?.id) {
-      setLoading(false);
-      return;
-    }
-    fetch(`/api/tanks?userId=${user.id}`)
-      .then((r) => r.json())
-      .then((d) => {
-        setTanks(d.tanks?.length ? d.tanks : DEFAULT_TANKS);
-      })
-      .catch(() => setTanks(DEFAULT_TANKS))
-      .finally(() => setLoading(false));
-  }, [user?.id]);
+  const { data: tanks = [], isLoading } = useQuery({
+    queryKey: ['tanks', user?.id],
+    queryFn: () => fetchTanks(user!.id),
+    enabled: !!user?.id,
+  });
 
   return (
     <div className="space-y-6">
@@ -56,8 +46,8 @@ export default function AquariumsPage() {
         </a>
       </header>
 
-      {loading ? (
-        <p className="text-slate-500">Loading...</p>
+      {isLoading ? (
+        <ListSkeleton rows={4} />
       ) : tanks.length === 0 ? (
         <Card>
           <div className="text-center py-12">
@@ -74,11 +64,7 @@ export default function AquariumsPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {tanks.map((tank) => (
-            <a
-              key={tank.id}
-              href={`/aquariums/${tank.id}`}
-              className="block"
-            >
+            <a key={tank.id} href={`/aquariums/${tank.id}`} className="block">
               <Card className="hover:border-primary-200 transition cursor-pointer">
                 <div className="flex items-start justify-between">
                   <div>
@@ -86,13 +72,9 @@ export default function AquariumsPage() {
                     <p className="text-sm text-slate-500 mt-1">
                       {tank.fish_species || 'No species'}
                     </p>
-                    <p className="text-sm text-slate-600 mt-1">
-                      {tank.fish_count} fish
-                    </p>
+                    <p className="text-sm text-slate-600 mt-1">{tank.fish_count} fish</p>
                     {tank.notes && (
-                      <p className="text-sm text-slate-500 mt-2 truncate max-w-[200px]">
-                        {tank.notes}
-                      </p>
+                      <p className="text-sm text-slate-500 mt-2 truncate max-w-[200px]">{tank.notes}</p>
                     )}
                   </div>
                   <ChevronRight className="w-5 h-5 text-slate-400" />

@@ -1,72 +1,25 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
+import { ListSkeleton } from '@/components/ui/Skeleton';
 import { Plus, ExternalLink, Trash2 } from 'lucide-react';
-
-type SupplierLink = {
-  id: string;
-  name: string;
-  url: string;
-};
+import { useSuppliers } from '@/hooks/use-suppliers';
 
 export default function SuppliersPage() {
   const { user } = useAuth();
-  const [links, setLinks] = useState<SupplierLink[]>([]);
+  const { links, isLoading, addLink, deleteLink } = useSuppliers(user?.id);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!user?.id) {
-      setLoading(false);
-      return;
-    }
-    fetch(`/api/suppliers?userId=${user.id}`)
-      .then((r) => r.json())
-      .then((d) => setLinks(d.links || []))
-      .catch(() => setLinks([]))
-      .finally(() => setLoading(false));
-  }, [user?.id]);
-
-  const addLink = async (e: React.FormEvent) => {
+  const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !url.trim() || !user?.id) return;
-
-    try {
-      const res = await fetch('/api/suppliers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, name: name.trim(), url: url.trim() }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setLinks([data, ...links]);
-        setName('');
-        setUrl('');
-      }
-    } catch {
-      // Fallback: add locally
-      const newLink = {
-        id: crypto.randomUUID(),
-        name: name.trim(),
-        url: url.trim(),
-      };
-      setLinks([newLink, ...links]);
-      setName('');
-      setUrl('');
-    }
-  };
-
-  const deleteLink = async (id: string) => {
-    try {
-      await fetch(`/api/suppliers/${id}`, { method: 'DELETE' });
-      setLinks(links.filter((l) => l.id !== id));
-    } catch {
-      setLinks(links.filter((l) => l.id !== id));
-    }
+    if (!name.trim() || !url.trim()) return;
+    addLink.mutate({ name: name.trim(), url: url.trim() });
+    setName('');
+    setUrl('');
   };
 
   return (
@@ -77,7 +30,7 @@ export default function SuppliersPage() {
       </header>
 
       <Card title="Add Supplier Link">
-        <form onSubmit={addLink} className="space-y-4">
+        <form onSubmit={handleAdd} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
             <input
@@ -106,8 +59,8 @@ export default function SuppliersPage() {
       </Card>
 
       <Card title="Saved Links">
-        {loading ? (
-          <p className="text-slate-500">Loading...</p>
+        {isLoading ? (
+          <ListSkeleton rows={3} />
         ) : links.length === 0 ? (
           <p className="text-slate-500">No supplier links yet. Add one above.</p>
         ) : (
@@ -130,7 +83,7 @@ export default function SuppliersPage() {
                   <ExternalLink className="w-4 h-4" />
                 </a>
                 <button
-                  onClick={() => deleteLink(link.id)}
+                  onClick={() => deleteLink.mutate(link.id)}
                   className="p-2 rounded-lg hover:bg-red-50 text-red-500"
                 >
                   <Trash2 className="w-4 h-4" />

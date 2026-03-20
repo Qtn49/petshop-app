@@ -47,7 +47,7 @@ type ParsedItem = {
   selected: boolean;
 };
 
-type EditingCell = { index: number; field: 'skn' | 'name' | 'quantity' | 'calculated_price' } | null;
+type EditingCell = { index: number; field: 'skn' | 'name' | 'quantity' | 'price' | 'calculated_price' } | null;
 
 const DEFAULT_FORMULAS: FormulaOption[] = [
   { id: 'default_100', label: '100%', multiplier: 2 * 1.1 },
@@ -173,7 +173,7 @@ export default function InvoiceDetailPage() {
     return 0;
   };
 
-  const startEdit = (index: number, field: 'skn' | 'name' | 'quantity' | 'calculated_price', cursorPosition?: number | null) => {
+  const startEdit = (index: number, field: 'skn' | 'name' | 'quantity' | 'price' | 'calculated_price', cursorPosition?: number | null) => {
     const item = items[index];
     if (!item) return;
     setEditing({ index, field });
@@ -181,6 +181,7 @@ export default function InvoiceDetailPage() {
     if (field === 'skn') setEditValue(item.skn ?? '');
     else if (field === 'name') setEditValue(item.product_name);
     else if (field === 'quantity') setEditValue(String(item.quantity));
+    else if (field === 'price') setEditValue(item.price != null ? String(item.price) : '');
     else setEditValue(item.calculated_price != null ? String(item.calculated_price) : '');
   };
 
@@ -198,6 +199,45 @@ export default function InvoiceDetailPage() {
         return;
       }
     }
+    if (field === 'price') {
+      const num = parseFloat(editValue);
+      const value = Number.isNaN(num) || num < 0 ? null : Math.round(num * 100) / 100;
+      if (value == null) {
+        cancelEdit();
+        return;
+      }
+
+      setItems((prev) => {
+        const next = [...prev];
+        const item = next[index];
+        if (!item) return prev;
+
+        const updated = { ...item, price: value };
+        const formulaId = updated.formula ?? formulaOptions[0]?.id ?? 'custom';
+
+        // If the row is using a non-custom formula, changing base price should
+        // re-calculate sale price immediately.
+        if (formulaId && formulaId !== 'custom') {
+          const formula = formulaOptions.find((f) => f.id === formulaId);
+          if (formula) {
+            let calculated = value > 0 ? Math.round(value * formula.multiplier * 100) / 100 : null;
+            if (calculated != null && calculated > 0 && getPsychologicalPricingEnabled()) {
+              calculated = applyPsychologicalPricing(calculated);
+            }
+            updated.calculated_price = calculated;
+            updated.salePrice = calculated;
+          }
+        }
+
+        next[index] = updated;
+        return next;
+      });
+
+      setEditing(null);
+      setEditValue('');
+      return;
+    }
+
     if (field === 'calculated_price') {
       const num = parseFloat(editValue);
       const value = Number.isNaN(num) || num < 0 ? null : Math.round(num * 100) / 100;
@@ -623,7 +663,7 @@ export default function InvoiceDetailPage() {
         <Card>
           <div className="flex items-center gap-3 py-4">
             <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
-            <span>Parsing invoice with AI...</span>
+            <span>Parsing invoice (deterministic) + AI verification...</span>
           </div>
         </Card>
       ) : (
@@ -809,7 +849,49 @@ export default function InvoiceDetailPage() {
                           )}
                         </td>
                         <td className="py-3 text-slate-800">
-                          {item.price != null ? `$${Number(item.price).toFixed(2)}` : '-'}
+                          {editing?.index === i && editing?.field === 'price' ? (
+                            <input
+                              ref={editInputRef}
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              onBlur={saveEdit}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveEdit();
+                                if (e.key === 'Escape') cancelEdit();
+                              }}
+                              className="w-24 px-2 py-1 border border-slate-300 rounded focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                              autoComplete="on"
+                              autoFocus
+                            />
+                          ) : (
+                            <span className="flex items-center gap-2">
+                              <span
+                                className="cursor-text"
+                                onClick={() => startEdit(i, 'price')}
+                                role="button"
+                                tabIndex={0}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    startEdit(i, 'price');
+                                  }
+                                }}
+                              >
+                                {item.price != null ? `$${Number(item.price).toFixed(2)}` : '—'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => startEdit(i, 'price')}
+                                className="p-1 rounded text-slate-400 hover:text-primary-600 hover:bg-slate-100"
+                                title="Edit price"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 text-slate-800">
                           <select
