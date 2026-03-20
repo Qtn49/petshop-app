@@ -28,6 +28,8 @@ export default function InvoiceConfirmPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [showValidation, setShowValidation] = useState(false);
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const [poVendorName, setPoVendorName] = useState('');
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
@@ -202,7 +204,7 @@ export default function InvoiceConfirmPage() {
     (sum, i) => sum + (i.purchase_price != null && !Number.isNaN(i.purchase_price) ? i.purchase_price * i.quantity : 0),
     0
   );
-  const summaryVendor = includedItems[0]?.vendor ?? '';
+  const summaryVendor = poVendorName.trim() || '';
   const summaryVendorCode = includedItems[0]?.vendor_code ?? '';
 
   const handleCreatePO = async () => {
@@ -222,6 +224,10 @@ export default function InvoiceConfirmPage() {
       setError('Select at least one item to include in the purchase order.');
       return;
     }
+    if (!poVendorName.trim()) {
+      setError('Please enter the vendor name for this purchase order.');
+      return;
+    }
 
     setSubmitting(true);
     setError('');
@@ -234,11 +240,25 @@ export default function InvoiceConfirmPage() {
           userId: user.id,
           invoiceId,
           items: includedItems,
+          poVendorName: poVendorName.trim(),
         }),
       });
       const data = await res.json();
 
       if (!res.ok) throw new Error(data.error || 'Failed to create purchase order');
+
+      if (data.csvBase64 && data.csvFilename) {
+        const bin = atob(data.csvBase64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const blob = new Blob([bytes], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = data.csvFilename;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
 
       sessionStorage.removeItem(getConfirmItemsKey(invoiceId));
       router.push(`/invoices/${invoiceId}?po_created=1`);
@@ -268,8 +288,8 @@ export default function InvoiceConfirmPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-bold text-slate-800">Confirm Products & Create Purchase Order</h1>
-        <p className="text-slate-500 mt-1">Review and complete product details, then create the purchase order.</p>
+        <h1 className="text-2xl font-bold text-slate-800">Confirm products & create purchase order</h1>
+        <p className="text-slate-500 mt-1">Review and complete product details. New items are created in Square; a CSV is downloaded for all items.</p>
       </header>
 
       {error && (
@@ -279,15 +299,38 @@ export default function InvoiceConfirmPage() {
         </div>
       )}
 
-      {newProducts.length > 0 && (
-        <Card title="1️⃣ New Products">
-          <p className="text-sm text-slate-600 mb-4">Complete details and add an image for each new product.</p>
-          <div className="space-y-4">
-            {items.map(
-              (item, i) =>
-                item.status === 'unmatched' && (
+      <Card title="Items">
+        <p className="text-sm text-slate-600 mb-4">Click a row to expand and edit. Include the items you want in the purchase order.</p>
+        <div className="space-y-1">
+          {items.map((item, i) => (
+            <div key={i} className="border border-slate-200 rounded-lg overflow-hidden bg-white">
+              <button
+                type="button"
+                onClick={() => setExpandedIndex((prev) => (prev === i ? null : i))}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 transition"
+              >
+                <input
+                  type="checkbox"
+                  checked={item.includedInPO !== false}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    updateItem(i, { includedInPO: e.target.checked });
+                  }}
+                  disabled={submitting}
+                  className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500 shrink-0"
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <span className="flex-1 font-medium text-slate-800 truncate">{item.product_name || 'Unnamed'}</span>
+                {item.category?.trim() && (
+                    <span className="text-xs text-slate-500 shrink-0 hidden sm:inline">
+                      {item.category.trim()}
+                    </span>
+                )}
+                <span className="text-slate-400 shrink-0">{expandedIndex === i ? '▼' : '▶'}</span>
+              </button>
+              {expandedIndex === i && (
+                <div ref={(el) => { itemRefs.current[i] = el; }} className="border-t border-slate-100 p-4 bg-slate-50/50">
                   <ProductCard
-                    key={i}
                     item={item}
                     index={i}
                     missingFields={new Set(showValidation ? getMissingFields(item) : [])}
@@ -296,46 +339,32 @@ export default function InvoiceConfirmPage() {
                     categoryLoading={categoriesLoading}
                     productNameOptionsLoading={productNameOptionsLoading}
                     disabled={submitting}
-                    itemRef={(el) => { itemRefs.current[i] = el; }}
                     squareItemFields={squareItemFields}
                     squareAutocomplete={squareAutocomplete}
                     userId={user?.id}
                   />
-                )
-            )}
-          </div>
-        </Card>
-      )}
-
-      {existingProducts.length > 0 && (
-        <Card title="2️⃣ Existing Products">
-          <p className="text-sm text-slate-600 mb-4">Review and update details for products already in your catalog.</p>
-          <div className="space-y-4">
-            {items.map(
-              (item, i) =>
-                item.status === 'matched' && (
-                  <ProductCard
-                    key={i}
-                    item={item}
-                    index={i}
-                    missingFields={new Set(showValidation ? getMissingFields(item) : [])}
-                    onChange={updateItem}
-                    squareCategories={squareCategories}
-                    categoryLoading={categoriesLoading}
-                    productNameOptionsLoading={productNameOptionsLoading}
-                    disabled={submitting}
-                    itemRef={(el) => { itemRefs.current[i] = el; }}
-                    squareItemFields={squareItemFields}
-                    squareAutocomplete={squareAutocomplete}
-                    userId={user?.id}
-                  />
-                )
-            )}
-          </div>
-        </Card>
-      )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </Card>
 
       <Card title="3️⃣ Purchase Order Summary">
+        <div className="mb-4">
+          <label htmlFor="po-vendor-name" className="block text-sm font-medium text-slate-700 mb-1">
+            Vendor name for this purchase order
+          </label>
+          <input
+            id="po-vendor-name"
+            type="text"
+            value={poVendorName}
+            onChange={(e) => setPoVendorName(e.target.value)}
+            placeholder="Type the vendor name"
+            disabled={submitting}
+            className="w-full max-w-md px-3 py-2 rounded-lg border border-slate-200 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
+          />
+        </div>
         <PurchaseOrderSummary
           items={includedItems}
           vendor={summaryVendor}
@@ -347,6 +376,9 @@ export default function InvoiceConfirmPage() {
             {items.length - includedItems.length} item(s) not included in this purchase order.
           </p>
         )}
+        <p className="text-sm text-slate-500 mt-2">
+          A CSV file matching the purchase order template will be downloaded. Items with an existing SKU are not created in Square.
+        </p>
         <div className="mt-6 flex flex-wrap gap-4">
           <Button variant="secondary" onClick={handleBack} disabled={submitting}>
             <ArrowLeft className="w-4 h-4 mr-2" />
@@ -362,7 +394,7 @@ export default function InvoiceConfirmPage() {
                 Creating...
               </>
             ) : (
-              'Create Purchase Order'
+              'Create items and download purchase order'
             )}
           </Button>
         </div>

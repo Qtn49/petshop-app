@@ -14,6 +14,10 @@ type Props = {
   missing?: boolean;
   /** Show loading state in the dropdown (e.g. while categories are being fetched) */
   loading?: boolean;
+  /** Called when the input loses focus (e.g. to trigger vendor lookup by SKU) */
+  onBlur?: () => void;
+  /** Called when user picks a value from the dropdown (receives the selected value) */
+  onSelect?: (value: string) => void;
 };
 
 export default function CategoryCombobox({
@@ -25,6 +29,8 @@ export default function CategoryCombobox({
   className = '',
   missing,
   loading = false,
+  onBlur,
+  onSelect,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
@@ -50,6 +56,7 @@ export default function CategoryCombobox({
     onChange(category);
     setFilter('');
     setOpen(false);
+    onSelect?.(category);
   };
 
   const handleFocus = () => {
@@ -70,6 +77,7 @@ export default function CategoryCombobox({
         value={value}
         onChange={handleChange}
         onFocus={handleFocus}
+        onBlur={onBlur}
         disabled={disabled}
         placeholder={placeholder}
         autoComplete="off"

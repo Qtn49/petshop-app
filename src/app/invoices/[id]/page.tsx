@@ -40,6 +40,8 @@ type ParsedItem = {
   catalogCategory?: string;
   catalogVendor?: string;
   catalogVendorCode?: string;
+  /** Square catalog variation price (pre-formula). */
+  squareCatalogPrice?: number | null;
   salePrice?: number | null;
   status: 'matched' | 'unmatched';
   selected: boolean;
@@ -71,16 +73,23 @@ function matchBySku(skn: string, catalogItems: CatalogItem[]): { item: CatalogIt
   return null;
 }
 
+function looksLikeGtin(s: string): boolean {
+  const digits = s.replace(/\D/g, '');
+  return [8, 12, 13, 14].includes(digits.length) && /^\d+$/.test(digits);
+}
+
 function toConfirmItem(item: ParsedItem): ConfirmItem {
+  const skn = (item.skn ?? '').trim();
   return {
     product_name: item.product_name,
     quantity: item.quantity,
     purchase_price: item.price != null ? Number(item.price) : null,
     retail_price: item.salePrice != null && !Number.isNaN(Number(item.salePrice)) ? Number(item.salePrice) : null,
     category: item.catalogCategory ?? '',
-    sku: (item.skn ?? '').trim(),
+    sku: skn,
     vendor: item.catalogVendor ?? '',
     vendor_code: item.catalogVendorCode ?? '',
+    gtin: looksLikeGtin(skn) ? skn.replace(/\D/g, '') : undefined,
     image: null,
     images: [],
     initial_stock: item.quantity,
@@ -131,7 +140,26 @@ export default function InvoiceDetailPage() {
       if (calculated != null && calculated > 0 && getPsychologicalPricingEnabled()) {
         calculated = applyPsychologicalPricing(calculated);
       }
-      next[index] = { ...item, calculated_price: calculated, formula: formulaId };
+      // For "matched" rows the UI displays `salePrice`, not `calculated_price`.
+      // Keep them in sync so selecting a formula actually changes sale price.
+      next[index] = { ...item, calculated_price: calculated, salePrice: calculated, formula: formulaId };
+      return next;
+    });
+  };
+
+  const applySquarePriceToRow = (index: number) => {
+    setItems((prev) => {
+      const next = [...prev];
+      const item = next[index];
+      if (!item) return prev;
+      const squarePrice = item.squareCatalogPrice ?? null;
+      if (squarePrice == null) return prev;
+      next[index] = {
+        ...item,
+        calculated_price: squarePrice,
+        salePrice: squarePrice,
+        formula: 'custom',
+      };
       return next;
     });
   };
@@ -177,7 +205,8 @@ export default function InvoiceDetailPage() {
         const next = [...prev];
         const item = next[index];
         if (!item) return prev;
-        next[index] = { ...item, calculated_price: value, formula: 'custom' };
+        // For matched rows we display `salePrice`, so update it too.
+        next[index] = { ...item, calculated_price: value, salePrice: value, formula: 'custom' };
         return next;
       });
       setEditing(null);
@@ -192,7 +221,9 @@ export default function InvoiceDetailPage() {
         const newSkn = editValue.trim();
         const match = matchBySku(newSkn, catalogItems);
         if (match) {
-          const salePrice = match.variation.price ?? item.calculated_price ?? null;
+          // Keep sale price consistent with formula-calculated value.
+          const squareCatalogPrice = match.variation.price ?? null;
+          const salePrice = item.calculated_price ?? match.variation.price ?? null;
           next[index] = {
             ...item,
             skn: newSkn,
@@ -203,6 +234,7 @@ export default function InvoiceDetailPage() {
             catalogVendor: match.item.vendor,
             catalogVendorCode: match.item.vendor_code,
             salePrice,
+            squareCatalogPrice,
             status: 'matched',
           };
         } else {
@@ -216,6 +248,7 @@ export default function InvoiceDetailPage() {
             catalogVendor: undefined,
             catalogVendorCode: undefined,
             salePrice: item.calculated_price ?? null,
+            squareCatalogPrice: null,
             status: 'unmatched',
           };
         }
@@ -280,9 +313,10 @@ export default function InvoiceDetailPage() {
 
       const match = matchBySku(i.skn ?? '', catalog);
       const inPO = Boolean(i.in_purchase_order);
-      const salePrice = match
-        ? (match.variation.price ?? calculated_price ?? null)
-        : (calculated_price ?? null);
+      // Show the formula-derived sale price first; only fall back to
+      // Square catalog variation price if we can't calculate.
+      const squareCatalogPrice = match?.variation.price ?? null;
+      const salePrice = calculated_price ?? squareCatalogPrice ?? null;
 
       return {
         skn: i.skn ?? '',
@@ -301,6 +335,7 @@ export default function InvoiceDetailPage() {
         catalogVendor: match?.item.vendor,
         catalogVendorCode: match?.item.vendor_code,
         salePrice,
+        squareCatalogPrice,
         status: match ? 'matched' : 'unmatched',
         selected: !inPO,
       };
@@ -827,6 +862,19 @@ export default function InvoiceDetailPage() {
                                     ? `$${Number(item.calculated_price).toFixed(2)}`
                                     : '—'}
                               </span>
+                              {item.status === 'matched' &&
+                                item.squareCatalogPrice != null &&
+                                item.salePrice != null &&
+                                Math.abs(Number(item.salePrice) - Number(item.squareCatalogPrice)) > 0.01 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => applySquarePriceToRow(i)}
+                                    className="px-2 py-1 text-xs rounded border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                                    title={`Square price is $${Number(item.squareCatalogPrice).toFixed(2)}; update sale price to match.`}
+                                  >
+                                    Update from Square
+                                  </button>
+                                )}
                               <button
                                 type="button"
                                 onClick={() => startEdit(i, 'calculated_price')}

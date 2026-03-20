@@ -1,11 +1,21 @@
 'use client';
 
+import { useState, useRef, useCallback } from 'react';
 import MissingFieldHighlight from './MissingFieldHighlight';
 import ImageUploader from './ImageUploader';
 import CategoryCombobox from './CategoryCombobox';
 import VendorAutocomplete from './VendorAutocomplete';
-import { X } from 'lucide-react';
+import { X, Loader2 } from 'lucide-react';
 import type { ConfirmItem } from '@/lib/invoice-import/confirm-types';
+
+/** In-memory cache for SKU → vendor to avoid repeated API calls in the same session. */
+const skuVendorCache = new Map<string, { vendorName: string; vendorCode: string }>();
+function getCachedVendor(sku: string): { vendorName: string; vendorCode: string } | undefined {
+  return skuVendorCache.get(sku.trim().toLowerCase());
+}
+function setCachedVendor(sku: string, data: { vendorName: string; vendorCode: string }) {
+  if (data.vendorName || data.vendorCode) skuVendorCache.set(sku.trim().toLowerCase(), data);
+}
 
 const FIELD_LABELS: Record<string, string> = {
   product_name: 'Product name',
@@ -63,6 +73,47 @@ export default function SquareItemField({
   userId,
 }: Props) {
   const label = fieldMetadata?.name ?? labelForKey(field);
+  /** Loading state for vendor-by-SKU lookup (only used when field === 'sku'). */
+  const [vendorLookupLoading, setVendorLookupLoading] = useState(false);
+
+  const skuOptions = squareAutocomplete?.sku ?? [];
+  const handleSkuBlur = useCallback(
+    (skuOverride?: string) => {
+      const raw = (skuOverride ?? item.sku ?? '').trim();
+      if (!raw || !userId) return;
+      const cached = getCachedVendor(raw);
+      if (cached) {
+        update({
+          vendor: cached.vendorName || item.vendor,
+          vendor_code: cached.vendorCode || item.vendor_code,
+          vendorAutofilledFromCatalog: true,
+        });
+        return;
+      }
+      setVendorLookupLoading(true);
+      fetch(
+        `/api/square/catalog/vendor-by-sku?userId=${encodeURIComponent(userId)}&sku=${encodeURIComponent(raw)}`
+      )
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error(res.statusText))))
+        .then((data: { vendorName?: string | null; vendorCode?: string | null }) => {
+          const name = (data.vendorName ?? '').trim();
+          const code = (data.vendorCode ?? '').trim();
+          if (name || code) {
+            setCachedVendor(raw, { vendorName: name, vendorCode: code });
+            update({
+              vendor: name || item.vendor,
+              vendor_code: code || item.vendor_code,
+              vendorAutofilledFromCatalog: true,
+            });
+          }
+        })
+        .catch(() => {
+          // Fallback to manual entry; leave fields unchanged
+        })
+        .finally(() => setVendorLookupLoading(false));
+    },
+    [item.sku, item.vendor, item.vendor_code, userId, update]
+  );
 
   if (field === 'category') {
     return (
@@ -182,18 +233,26 @@ export default function SquareItemField({
   }
 
   if (field === 'sku') {
-    const options = squareAutocomplete?.sku ?? [];
     return (
       <MissingFieldHighlight missing={!!missing}>
         <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
-        <CategoryCombobox
-          value={item.sku}
-          onChange={(v) => update({ sku: v })}
-          categories={options}
-          disabled={disabled}
-          placeholder="SKU"
-          missing={!!missing}
-        />
+        <div className="relative">
+          <CategoryCombobox
+            value={item.sku}
+            onChange={(v) => update({ sku: v })}
+            onBlur={() => handleSkuBlur()}
+            onSelect={(selectedSku) => handleSkuBlur(selectedSku)}
+            categories={skuOptions}
+            disabled={disabled}
+            placeholder="SKU"
+            missing={!!missing}
+          />
+          {vendorLookupLoading && (
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden>
+              <Loader2 className="w-4 h-4 animate-spin" />
+            </span>
+          )}
+        </div>
       </MissingFieldHighlight>
     );
   }
@@ -204,13 +263,16 @@ export default function SquareItemField({
         <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
         <VendorAutocomplete
           value={item.vendor ?? ''}
-          onChange={(name) => update({ vendor: name })}
-          onVendorSelect={(v) => update({ vendor_id: v.id, vendor: v.name })}
+          onChange={(name) => update({ vendor: name, vendorAutofilledFromCatalog: false })}
+          onVendorSelect={(v) => update({ vendor_id: v.id, vendor: v.name, vendorAutofilledFromCatalog: false })}
           userId={userId}
           disabled={disabled}
           placeholder="Search vendor..."
           missing={!!missing}
         />
+        {item.vendorAutofilledFromCatalog && (item.vendor ?? '').trim() && (
+          <p className="mt-1 text-xs text-slate-500">Auto-filled from catalog</p>
+        )}
       </MissingFieldHighlight>
     );
   }
@@ -222,12 +284,15 @@ export default function SquareItemField({
         <input
           type="text"
           value={item.vendor_code ?? ''}
-          onChange={(e) => update({ vendor_code: e.target.value })}
+          onChange={(e) => update({ vendor_code: e.target.value, vendorAutofilledFromCatalog: false })}
           disabled={disabled}
           placeholder={label}
           autoComplete="off"
           className={`w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none ${missing ? 'ring-1 ring-amber-400' : ''}`}
         />
+        {item.vendorAutofilledFromCatalog && (item.vendor_code ?? '').trim() && (
+          <p className="mt-1 text-xs text-slate-500">Auto-filled from catalog</p>
+        )}
       </MissingFieldHighlight>
     );
   }

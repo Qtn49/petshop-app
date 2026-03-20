@@ -13,6 +13,8 @@ export type ConfirmItem = {
   /** Square vendor id when selected from Square Vendors API (stored locally in item_vendors) */
   vendor_id?: string;
   vendor_code: string;
+  /** GTIN / barcode for purchase order template (from invoice or Square) */
+  gtin?: string;
   /** Data URL or Square image id after upload; first of images for multi-upload */
   image: string | null;
   /** Additional image URLs (multi-upload) */
@@ -28,6 +30,8 @@ export type ConfirmItem = {
   invoice_item_id?: string;
   /** When true: add as purchase order line only, do not create a Square catalog item. Set when user selects an existing catalog product name. */
   addAsPoOnly?: boolean;
+  /** Set when vendor/vendor_code were auto-filled from catalog (SKU lookup). Cleared when user edits vendor or vendor_code. */
+  vendorAutofilledFromCatalog?: boolean;
   /** Custom attribute keys from Square (e.g. item options, custom attribute definitions) */
   customAttributes?: Record<string, string>;
 };
@@ -38,8 +42,6 @@ export const REQUIRED_FIELDS = [
   'retail_price',
   'category',
   'sku',
-  'vendor',
-  'vendor_code',
   'image',
   'initial_stock',
 ] as const;
@@ -58,8 +60,6 @@ export function getMissingFields(item: ConfirmItem): RequiredField[] {
   if (!item.sku?.trim()) missing.push('sku');
   if (item.retail_price == null || Number.isNaN(item.retail_price) || item.retail_price < 0) missing.push('retail_price');
   if (!item.category?.trim()) missing.push('category');
-  if (!item.vendor?.trim()) missing.push('vendor');
-  if (!item.vendor_code?.trim()) missing.push('vendor_code');
   if (item.initial_stock == null || Number.isNaN(item.initial_stock) || item.initial_stock < 0) missing.push('initial_stock');
   if (item.status === 'unmatched') {
     const hasImage = item.image?.trim() || (item.images?.length ?? 0) > 0;

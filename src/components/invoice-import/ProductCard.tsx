@@ -30,7 +30,6 @@ const FIELDS_TO_RENDER = [
   'category',
   'sku',
   'description',
-  'vendor',
   'vendor_code',
   'initial_stock',
   'image',
