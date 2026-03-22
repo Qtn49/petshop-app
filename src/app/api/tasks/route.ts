@@ -13,6 +13,7 @@ export async function GET(request: Request) {
     .from('tasks')
     .select('id, title, completed, due_date, created_at')
     .eq('user_id', userId)
+    .is('due_date', null)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const supabase = getSupabaseClient();
   const body = await request.json();
-  const { userId, title, dueDate, priority } = body;
+  const { userId, title, priority } = body;
 
   if (!userId || !title) {
     return NextResponse.json(
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
     .insert({
       user_id: userId,
       title,
-      due_date: dueDate || null,
+      due_date: null,
       priority: priority || 'medium',
     })
     .select()

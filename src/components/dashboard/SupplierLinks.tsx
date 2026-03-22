@@ -1,6 +1,7 @@
 'use client';
 
 import { ExternalLink } from 'lucide-react';
+import { useTenantHref } from '@/hooks/useTenantHref';
 
 type Link = {
   id: string;
@@ -15,12 +16,14 @@ export default function SupplierLinks({
   links: Link[];
   userId?: string;
 }) {
+  const tenantHref = useTenantHref();
+  const suppliersPath = tenantHref('/suppliers');
   return (
     <div className="overflow-hidden h-full flex flex-col">
       <div className="p-4 border-b border-amber-50/90 flex items-center justify-between">
         <h2 className="font-semibold text-stone-800">Saved Links</h2>
         <a
-          href="/suppliers"
+          href={suppliersPath}
           className="text-sm text-primary-600 hover:text-primary-700 font-medium"
         >
           Manage
@@ -45,7 +48,7 @@ export default function SupplierLinks({
           ))}
           {links.length === 0 && (
             <p className="text-stone-500 text-sm py-4 text-center">
-              No saved links yet. <a href="/suppliers" className="text-primary-600">Add some</a>
+              No saved links yet. <a href={suppliersPath} className="text-primary-600">Add some</a>
             </p>
           )}
         </ul>

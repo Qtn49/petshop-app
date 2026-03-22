@@ -14,6 +14,8 @@ const nextConfig = {
         aggregateTimeout: 300,
         ignored: ['**/node_modules/**', '**/.git/**', '**/.next/**'],
       };
+      // Disable filesystem cache in dev to prevent stale vendor-chunk errors after rebuilds
+      config.cache = false;
     }
     return config;
   },

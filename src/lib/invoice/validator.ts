@@ -6,7 +6,7 @@ export type ValidationResult =
 
 /**
  * Validates parsed invoice items.
- * Rules: at least 2 items, name >= 5 chars, quantity in 1..200, price > 0.
+ * Rules: at least 2 items, name >= 5 chars, quantity in 1..200, price >= 0.
  */
 export function validateItems(items: ParsedInvoiceItem[]): ValidationResult {
   const errors: string[] = [];
@@ -33,8 +33,8 @@ export function validateItems(items: ParsedInvoiceItem[]): ValidationResult {
     }
 
     const price = Number(item.price);
-    if (Number.isNaN(price) || price <= 0) {
-      errors.push(`${prefix} price must be greater than 0`);
+    if (Number.isNaN(price) || price < 0) {
+      errors.push(`${prefix} price must be 0 or greater`);
     }
   });
 

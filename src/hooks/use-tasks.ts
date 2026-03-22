@@ -28,21 +28,42 @@ export function useTasks(userId?: string) {
 
   const addTask = useMutation({
     mutationFn: async (task: { title: string; dueDate?: string | null }) => {
+      if (task.dueDate) {
+        const res = await fetch('/api/day-tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            task_date: task.dueDate,
+            title: task.title,
+            frequency: 'once',
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error((err as { error?: string }).error || 'Failed to add calendar task');
+        }
+        await qc.invalidateQueries({ queryKey: ['day-tasks-month', userId] });
+        await qc.invalidateQueries({ queryKey: ['day-tasks', userId] });
+        return res.json();
+      }
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, title: task.title, dueDate: task.dueDate }),
+        body: JSON.stringify({ userId, title: task.title }),
       });
+      if (!res.ok) throw new Error('Failed to add task');
       return res.json();
     },
     onMutate: async (vars) => {
+      if (vars.dueDate) return { prev: undefined as Task[] | undefined };
       await qc.cancelQueries({ queryKey });
       const prev = qc.getQueryData<Task[]>(queryKey) ?? [];
       const optimistic: Task = {
         id: crypto.randomUUID(),
         title: vars.title,
         completed: false,
-        due_date: vars.dueDate ?? null,
+        due_date: null,
       };
       qc.setQueryData<Task[]>(queryKey, [...prev, optimistic]);
       return { prev };

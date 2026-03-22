@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   format,
   startOfMonth,
@@ -13,28 +13,27 @@ import {
   isSameMonth,
   isSameDay,
 } from 'date-fns';
-import DayTasksPanel from './DayTasksPanel';
 
-type TaskWithDate = {
-  id: string;
-  title: string;
-  completed: boolean;
-  due_date?: string | null;
+type Props = {
+  /** Month being displayed */
+  calendarMonth: Date;
+  onMonthChange: (d: Date) => void;
+  selectedDate: Date | null;
+  onSelectDate: (d: Date | null) => void;
+  /** yyyy-MM-dd -> count of day_tasks for that day */
+  dayTaskCounts: Map<string, number>;
 };
 
 export default function DashboardCalendar({
-  userId,
-  tasks = [],
-}: {
-  userId?: string;
-  tasks?: TaskWithDate[];
-}) {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-
+  calendarMonth,
+  onMonthChange,
+  selectedDate,
+  onSelectDate,
+  dayTaskCounts,
+}: Props) {
   const today = new Date();
 
-  const monthStart = startOfMonth(currentDate);
+  const monthStart = startOfMonth(calendarMonth);
   const monthEnd = endOfMonth(monthStart);
   const startDate = startOfWeek(monthStart);
   const endDate = endOfWeek(monthEnd);
@@ -52,47 +51,36 @@ export default function DashboardCalendar({
     day = addDays(day, 1);
   }
 
-  const tasksByDate = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const t of tasks) {
-      if (t.due_date) {
-        const key = typeof t.due_date === 'string' ? t.due_date.slice(0, 10) : '';
-        if (key) map.set(key, (map.get(key) ?? 0) + 1);
-      }
-    }
-    return map;
-  }, [tasks]);
-
   const weekDays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
   const handleDayClick = (d: Date) => {
     if (selectedDate && isSameDay(d, selectedDate)) {
-      setSelectedDate(null);
+      onSelectDate(null);
     } else {
-      setSelectedDate(d);
+      onSelectDate(d);
     }
   };
 
   const getDayClassName = (d: Date) => {
-    const height = selectedDate ? 'h-7' : 'h-full min-h-[28px]';
-    const base = `w-full ${height} flex items-center justify-center rounded text-xs cursor-pointer transition font-medium relative`;
+    const base =
+      'w-full min-h-[32px] flex items-center justify-center rounded-lg text-xs cursor-pointer transition font-medium relative';
     if (!isSameMonth(d, monthStart)) {
       return `${base} text-stone-300`;
     }
     const isToday = isSameDay(d, today);
     const isSelected = selectedDate && isSameDay(d, selectedDate);
     if (isSelected) {
-      return `${base} bg-green-500 text-white hover:bg-green-600`;
+      return `${base} bg-primary-600 text-white shadow-md shadow-primary-600/25 ring-2 ring-primary-400/50`;
     }
     if (isToday) {
-      return `${base} bg-primary-100 text-primary-800 font-bold ring-1 ring-primary-400`;
+      return `${base} bg-primary-100 text-primary-900 font-bold ring-1 ring-primary-400/60`;
     }
-    return `${base} text-stone-700 hover:bg-amber-50/80`;
+    return `${base} text-stone-700 hover:bg-amber-50/90`;
   };
 
   const getTaskCount = (d: Date) => {
     const key = format(d, 'yyyy-MM-dd');
-    return tasksByDate.get(key) ?? 0;
+    return dayTaskCounts.get(key) ?? 0;
   };
 
   return (
@@ -101,24 +89,28 @@ export default function DashboardCalendar({
         <h2 className="font-semibold text-stone-800 text-sm">Calendar</h2>
         <div className="flex items-center gap-1">
           <button
-            onClick={() => setCurrentDate(subMonths(currentDate, 1))}
+            type="button"
+            onClick={() => onMonthChange(subMonths(calendarMonth, 1))}
             className="p-1 rounded-lg hover:bg-amber-50 text-stone-600 text-sm"
+            aria-label="Previous month"
           >
             ‹
           </button>
-          <span className="px-2 py-1 font-medium text-stone-800 text-xs min-w-[100px] text-center">
-            {format(currentDate, 'MMM yyyy')}
+          <span className="px-2 py-1 font-semibold text-gray-900 text-xs min-w-[100px] text-center">
+            {format(calendarMonth, 'MMM yyyy')}
           </span>
           <button
-            onClick={() => setCurrentDate(addMonths(currentDate, 1))}
+            type="button"
+            onClick={() => onMonthChange(addMonths(calendarMonth, 1))}
             className="p-1 rounded-lg hover:bg-amber-50 text-stone-600 text-sm"
+            aria-label="Next month"
           >
             ›
           </button>
         </div>
       </div>
-      <div className={`px-2 py-1 ${selectedDate ? 'flex-shrink-0' : 'flex-1 min-h-0'}`}>
-        <table className="w-full table-fixed" style={selectedDate ? undefined : { height: '100%' }}>
+      <div className="px-2 py-2 flex-1 min-h-0 overflow-auto">
+        <table className="w-full table-fixed">
           <thead>
             <tr>
               {weekDays.map((d, i) => (
@@ -134,20 +126,34 @@ export default function DashboardCalendar({
                 {row.map((d) => {
                   const count = getTaskCount(d);
                   const isSelected = selectedDate && isSameDay(d, selectedDate);
+                  const inMonth = isSameMonth(d, monthStart);
                   return (
-                    <td key={d.toISOString()} className="p-0.5">
+                    <td key={d.toISOString()} className="p-0.5 align-top">
                       <button
                         type="button"
                         className={getDayClassName(d)}
                         onClick={() => handleDayClick(d)}
                       >
-                        {format(d, 'd')}
-                        {count > 0 && isSameMonth(d, monthStart) && (
-                          <span
-                            className={`absolute -bottom-0.5 w-1 h-1 rounded-full ${
-                              isSelected ? 'bg-white' : 'bg-primary-500'
-                            }`}
-                          />
+                        <span className="relative z-[1]">{format(d, 'd')}</span>
+                        {count > 0 && inMonth && (
+                          <>
+                            <span
+                              className={`absolute bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full ${
+                                isSelected ? 'bg-white' : 'bg-primary-500'
+                              }`}
+                            />
+                            {count > 1 && (
+                              <span
+                                className={`absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-0.5 rounded-full text-[9px] font-bold leading-[14px] ${
+                                  isSelected
+                                    ? 'bg-white text-primary-700'
+                                    : 'bg-primary-500 text-white'
+                                }`}
+                              >
+                                {count > 9 ? '9+' : count}
+                              </span>
+                            )}
+                          </>
                         )}
                       </button>
                     </td>
@@ -158,9 +164,6 @@ export default function DashboardCalendar({
           </tbody>
         </table>
       </div>
-      {selectedDate && (
-        <DayTasksPanel date={selectedDate} userId={userId} todoTasks={tasks} />
-      )}
     </div>
   );
 }

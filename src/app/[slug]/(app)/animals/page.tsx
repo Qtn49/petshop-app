@@ -70,12 +70,12 @@ const STATUS_CONFIG: Record<AnimalStatus, { label: string; pill: string; badge: 
 };
 
 const SPECIES_OPTIONS: { value: AnimalSpecies; label: string; emoji: string }[] = [
-  { value: 'kitten', label: 'Chaton', emoji: '🐱' },
-  { value: 'bird', label: 'Oiseau', emoji: '🐦' },
-  { value: 'dog', label: 'Chien', emoji: '🐶' },
-  { value: 'rabbit', label: 'Lapin', emoji: '🐇' },
+  { value: 'kitten', label: 'Kitten', emoji: '🐱' },
+  { value: 'bird', label: 'Bird', emoji: '🐦' },
+  { value: 'dog', label: 'Dog', emoji: '🐶' },
+  { value: 'rabbit', label: 'Rabbit', emoji: '🐇' },
   { value: 'reptile', label: 'Reptile', emoji: '🦎' },
-  { value: 'other', label: 'Autre', emoji: '❓' },
+  { value: 'other', label: 'Other', emoji: '❓' },
 ];
 
 const SPECIES_FILTER_PILLS = [
@@ -125,14 +125,17 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 
 // ─── Animal Card ──────────────────────────────────────────────────────────────
 
-function AnimalCard({ animal }: { animal: Animal }) {
+function AnimalCard({ animal, onClick }: { animal: Animal; onClick: () => void }) {
   const age = formatAge(animal.age_months);
   const speciesOption = SPECIES_OPTIONS.find((s) => s.value === animal.species)
     ?? { emoji: '🐾', label: animal.species };
   const statusCfg = STATUS_CONFIG[animal.status];
 
   return (
-    <div className="bg-white rounded-2xl border border-amber-100/80 shadow-warm-sm overflow-hidden flex flex-col">
+    <div
+      className="bg-white rounded-2xl border border-amber-100/80 shadow-warm-sm overflow-hidden flex flex-col cursor-pointer hover:shadow-md hover:border-amber-300 transition"
+      onClick={onClick}
+    >
       {/* Photo or placeholder */}
       <div className="relative aspect-video">
         {animal.photos.length > 0 ? (
@@ -196,29 +199,44 @@ function AnimalCard({ animal }: { animal: Animal }) {
   );
 }
 
-// ─── Add Animal Modal ─────────────────────────────────────────────────────────
+// ─── Animal Form Modal (Add + Edit) ───────────────────────────────────────────
 
-function AddAnimalModal({
+function AnimalFormModal({
   organizationId,
+  animal,
   onClose,
   onSuccess,
 }: {
   organizationId: string;
+  animal?: Animal;
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const [species, setSpecies] = useState<AnimalSpecies>('kitten');
-  const [name, setName] = useState('');
-  const [breed, setBreed] = useState('');
-  const [ageValue, setAgeValue] = useState('');
-  const [ageUnit, setAgeUnit] = useState<'weeks' | 'months' | 'years'>('months');
-  const [sex, setSex] = useState<'male' | 'female' | 'unknown'>('unknown');
-  const [price, setPrice] = useState('');
-  const [status, setStatus] = useState<AnimalStatus>('available');
-  const [handRaised, setHandRaised] = useState(false);
-  const [microchipped, setMicrochipped] = useState(false);
-  const [vaccinated, setVaccinated] = useState(false);
-  const [notes, setNotes] = useState('');
+  const isEdit = !!animal;
+
+  function initialAgeValue(months: number | null): string {
+    if (months == null) return '';
+    if (months % 12 === 0 && months >= 12) return String(months / 12);
+    return String(months);
+  }
+  function initialAgeUnit(months: number | null): 'weeks' | 'months' | 'years' {
+    if (months != null && months % 12 === 0 && months >= 12) return 'years';
+    return 'months';
+  }
+
+  const [species, setSpecies] = useState<AnimalSpecies>(animal?.species ?? 'kitten');
+  const [name, setName] = useState(animal?.name ?? '');
+  const [breed, setBreed] = useState(animal?.breed ?? '');
+  const [ageValue, setAgeValue] = useState(initialAgeValue(animal?.age_months ?? null));
+  const [ageUnit, setAgeUnit] = useState<'weeks' | 'months' | 'years'>(initialAgeUnit(animal?.age_months ?? null));
+  const [sex, setSex] = useState<'male' | 'female' | 'unknown'>(animal?.sex ?? 'unknown');
+  const [price, setPrice] = useState(animal?.price != null ? String(animal.price) : '');
+  const [status, setStatus] = useState<AnimalStatus>(animal?.status ?? 'available');
+  const [handRaised, setHandRaised] = useState(animal?.hand_raised ?? false);
+  const [microchipped, setMicrochipped] = useState(animal?.microchipped ?? false);
+  const [vaccinated, setVaccinated] = useState(animal?.vaccinated ?? false);
+  const [notes, setNotes] = useState(animal?.notes ?? '');
+  const [existingPhotos, setExistingPhotos] = useState<string[]>(animal?.photos ?? []);
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -254,7 +272,7 @@ function AddAnimalModal({
     setError('');
 
     try {
-      // Upload photos
+      // Upload new photos
       const uploadedUrls: string[] = [];
       for (const file of photoFiles) {
         const fd = new FormData();
@@ -267,26 +285,33 @@ function AddAnimalModal({
         }
       }
 
-      // Create animal
-      const res = await fetch('/api/animals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          organizationId,
-          name: name.trim(),
-          species,
-          breed: breed.trim() || null,
-          age_months: ageValue ? toMonths(ageValue, ageUnit) : null,
-          sex,
-          price: price || null,
-          status,
-          hand_raised: species === 'bird' ? handRaised : null,
-          microchipped,
-          vaccinated,
-          notes: notes.trim() || null,
-          photos: uploadedUrls,
-        }),
-      });
+      const payload = {
+        organizationId,
+        name: name.trim(),
+        species,
+        breed: breed.trim() || null,
+        age_months: ageValue ? toMonths(ageValue, ageUnit) : null,
+        sex,
+        price: price || null,
+        status,
+        hand_raised: species === 'bird' ? handRaised : null,
+        microchipped,
+        vaccinated,
+        notes: notes.trim() || null,
+        photos: [...existingPhotos, ...uploadedUrls],
+      };
+
+      const res = isEdit
+        ? await fetch(`/api/animals/${animal.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+        : await fetch('/api/animals', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
 
       if (!res.ok) {
         const d = await res.json();
@@ -306,11 +331,14 @@ function AddAnimalModal({
   const inputCls = 'w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300';
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg my-6">
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center p-4 overflow-y-auto"
+      onClick={onClose}
+    >
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg my-6" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-lg font-semibold text-stone-800">Add Animal</h2>
+          <h2 className="text-lg font-semibold text-stone-800">{isEdit ? 'Edit Animal' : 'Add Animal'}</h2>
           <button
             type="button"
             onClick={onClose}
@@ -435,15 +463,30 @@ function AddAnimalModal({
           {/* 7. Status */}
           <div>
             <label className={labelCls}>Status</label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as AnimalStatus)}
-              className={`${inputCls} bg-white`}
-            >
-              <option value="available">Available</option>
-              <option value="reserved">Reserved</option>
-              <option value="adopted">Adopted</option>
-            </select>
+            <div className="flex gap-2">
+              {(['available', 'reserved', 'adopted'] as const).map((s) => {
+                const cfg = STATUS_CONFIG[s];
+                const isSelected = status === s;
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setStatus(s)}
+                    className={`flex-1 py-2 rounded-xl border text-sm font-medium transition ${
+                      isSelected
+                        ? s === 'available'
+                          ? 'bg-green-100 border-green-400 text-green-900'
+                          : s === 'reserved'
+                            ? 'bg-amber-100 border-amber-400 text-amber-900'
+                            : 'bg-slate-100 border-slate-400 text-slate-700'
+                        : 'border-slate-200 text-stone-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {cfg.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* 8. Hand Raised (birds only) */}
@@ -508,10 +551,27 @@ function AddAnimalModal({
               />
             </div>
 
-            {photoPreviews.length > 0 && (
+            {(existingPhotos.length > 0 || photoPreviews.length > 0) && (
               <div className="flex flex-wrap gap-2 mt-3">
+                {existingPhotos.map((url, i) => (
+                  <div key={`existing-${i}`} className="relative w-20 h-20">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={url}
+                      alt=""
+                      className="w-20 h-20 object-cover rounded-lg border border-slate-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setExistingPhotos((prev) => prev.filter((_, idx) => idx !== i))}
+                      className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center hover:bg-red-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
                 {photoPreviews.map((url, i) => (
-                  <div key={i} className="relative w-20 h-20">
+                  <div key={`new-${i}`} className="relative w-20 h-20">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={url}
@@ -535,7 +595,7 @@ function AddAnimalModal({
 
           <div className="flex gap-2 pt-1">
             <Button type="submit" disabled={!name.trim() || isSubmitting}>
-              {isSubmitting ? 'Saving...' : 'Add Animal'}
+              {isSubmitting ? 'Saving...' : isEdit ? 'Save Changes' : 'Add Animal'}
             </Button>
             <Button type="button" variant="secondary" onClick={onClose}>
               Cancel
@@ -556,6 +616,7 @@ export default function AnimalsPage() {
   const [speciesFilter, setSpeciesFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showModal, setShowModal] = useState(false);
+  const [editingAnimal, setEditingAnimal] = useState<Animal | null>(null);
 
   const { data: animals = [], isLoading } = useQuery({
     queryKey: ['animals', organizationId],
@@ -642,19 +703,32 @@ export default function AnimalsPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((animal) => (
-            <AnimalCard key={animal.id} animal={animal} />
+            <AnimalCard key={animal.id} animal={animal} onClick={() => setEditingAnimal(animal)} />
           ))}
         </div>
       )}
 
-      {/* Modal */}
+      {/* Add Modal */}
       {showModal && organizationId && (
-        <AddAnimalModal
+        <AnimalFormModal
           organizationId={organizationId}
           onClose={() => setShowModal(false)}
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ['animals', organizationId] });
             setShowModal(false);
+          }}
+        />
+      )}
+
+      {/* Edit Modal */}
+      {editingAnimal && organizationId && (
+        <AnimalFormModal
+          organizationId={organizationId}
+          animal={editingAnimal}
+          onClose={() => setEditingAnimal(null)}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['animals', organizationId] });
+            setEditingAnimal(null);
           }}
         />
       )}

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
+import { useTenantHref } from '@/hooks/useTenantHref';
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, X, Settings } from 'lucide-react';
 
@@ -18,8 +19,9 @@ export default function SquareNotConnectedPopup() {
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const tenantHref = useTenantHref();
   const [dismissed, setDismissed] = useState(false);
-  const isSettingsPage = pathname === '/settings';
+  const isSettingsPage = pathname?.endsWith('/settings') ?? false;
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -39,8 +41,8 @@ export default function SquareNotConnectedPopup() {
   const connected = data?.connected ?? null;
 
   const goToSettings = useCallback(() => {
-    router.push('/settings');
-  }, [router]);
+    router.push(tenantHref('/settings'));
+  }, [router, tenantHref]);
 
   const dismiss = useCallback(() => {
     try { sessionStorage.setItem(DISMISS_KEY, '1'); } catch {}

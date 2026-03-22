@@ -10,6 +10,7 @@ type Body = {
   phone?: string;
   currency?: string;
   invoice_new_item_fields?: string[];
+  ai_price_suggestions?: boolean;
 };
 
 /** GET: Return the current user's organization (for settings). */
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
 
     const { data, error } = await supabase
       .from('organization')
-      .select('id, company_name, address, email, phone, currency, invoice_new_item_fields')
+      .select('id, company_name, address, email, phone, currency, invoice_new_item_fields, ai_price_suggestions')
       .eq('id', user.organization_id)
       .single();
 
@@ -60,6 +61,9 @@ export async function PATCH(request: Request) {
       updates.invoice_new_item_fields = Array.isArray(body.invoice_new_item_fields)
         ? body.invoice_new_item_fields
         : DEFAULT_NEW_ITEM_FIELDS;
+    }
+    if (body.ai_price_suggestions !== undefined) {
+      updates.ai_price_suggestions = Boolean(body.ai_price_suggestions);
     }
 
     const { data, error } = await supabase

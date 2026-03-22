@@ -103,6 +103,7 @@ export default function ChatbotButton() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamDoneRef = useRef(false);
   const userScrolledRef = useRef(false);
+  const lastScrollTimeRef = useRef(0);
 
   useEffect(() => {
     isOpenRef.current = isOpen;
@@ -290,7 +291,11 @@ export default function ChatbotButton() {
         queueRef.current = queueRef.current.slice(take);
         setStreamingContent(displayedRef.current);
         if (!userScrolledRef.current) {
-          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          const now = Date.now();
+          if (now - lastScrollTimeRef.current > 300) {
+            lastScrollTimeRef.current = now;
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          }
         }
       }, 18);
     };

@@ -342,7 +342,7 @@ function toLegacy(rich: RichParsedItem): LegacyParsedItem {
     sku: rich.barcode ?? null,
     name: rich.name,
     quantity,
-    price: price > 0 ? price : 0.01,
+    price: price >= 0 ? price : 0,
   };
 }
 

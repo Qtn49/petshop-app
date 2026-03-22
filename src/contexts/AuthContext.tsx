@@ -1,8 +1,10 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { usePathname } from 'next/navigation';
 import { setOrganizationConnected } from '@/lib/organization-connection';
-import { setReturnPathAfterLogin } from '@/lib/sessionReturnPath';
+import { tenantSlugFromPathname } from '@/lib/slug';
+import { writeDeviceSession } from '@/lib/auth/device-session';
 
 export type User = {
   id: string;
@@ -21,116 +23,151 @@ type Session = {
 type AuthContextType = {
   user: User | null;
   isLoading: boolean;
-  login: (userId: string, pin: string) => Promise<boolean>;
-  logout: () => void;
+  /** Legacy: user id + PIN (e.g. tools). */
+  loginWithUserId: (userId: string, pin: string) => Promise<boolean>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const SESSION_STORAGE_KEY = 'petshop_session';
-const INACTIVITY_MS = 5 * 60 * 1000; // 5 minutes
+
+async function persistSessionFromResponse(
+  data: {
+    user: User;
+    organization_id: string;
+    login_timestamp: string;
+  },
+  slug?: string | null
+) {
+  const session: Session = {
+    user: data.user,
+    organization_id: data.organization_id,
+    login_timestamp: data.login_timestamp,
+  };
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+    setOrganizationConnected(true);
+  }
+  const s = (slug ?? '').trim().toLowerCase();
+  if (s && data.user?.id && data.organization_id) {
+    writeDeviceSession(s, {
+      userId: data.user.id,
+      userName: data.user.name ?? 'User',
+      organizationId: data.organization_id,
+      slug: s,
+    });
+  }
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const logoutRef = useRef<() => void>(() => {});
-
-  const logout = useCallback(() => {
-    setReturnPathAfterLogin();
-    setUser(null);
-    if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem(SESSION_STORAGE_KEY);
-    }
-    if (inactivityTimerRef.current) {
-      clearTimeout(inactivityTimerRef.current);
-      inactivityTimerRef.current = null;
-    }
-    if (typeof window !== 'undefined') {
-      window.location.href = '/';
-    }
-  }, []);
-
-  logoutRef.current = logout;
+  const pathname = usePathname();
 
   useEffect(() => {
-    try {
-      const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(SESSION_STORAGE_KEY) : null;
-      if (stored) {
-        const parsed = JSON.parse(stored) as Session;
-        if (parsed?.user?.id && parsed?.login_timestamp) {
-          setUser({
-            id: parsed.user.id,
-            name: parsed.user.name ?? null,
-            email: parsed.user.email ?? null,
-            role: parsed.user.role ?? 'staff',
-            organization_id: parsed.user.organization_id ?? parsed.organization_id ?? '',
+    let cancelled = false;
+    const slug = tenantSlugFromPathname(pathname);
+
+    async function init() {
+      if (slug) {
+        try {
+          const r = await fetch(`/api/auth/me?slug=${encodeURIComponent(slug)}`, {
+            credentials: 'include',
+            cache: 'no-store',
           });
+          if (!cancelled && r.ok) {
+            const data = (await r.json()) as { user?: User | null };
+            if (data?.user?.id) {
+              const u = data.user;
+              setUser({
+                id: u.id,
+                name: u.name ?? null,
+                email: u.email ?? null,
+                role: (u.role as 'admin' | 'staff') ?? 'staff',
+                organization_id: u.organization_id ?? '',
+              });
+              setIsLoading(false);
+              return;
+            }
+          }
+        } catch {
+          // fall through
         }
       }
-    } catch {
-      if (typeof localStorage !== 'undefined') localStorage.removeItem(SESSION_STORAGE_KEY);
-    } finally {
-      setIsLoading(false);
+
+      try {
+        const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(SESSION_STORAGE_KEY) : null;
+        if (stored && !cancelled) {
+          const parsed = JSON.parse(stored) as Session;
+          if (parsed?.user?.id && parsed?.login_timestamp) {
+            setUser({
+              id: parsed.user.id,
+              name: parsed.user.name ?? null,
+              email: parsed.user.email ?? null,
+              role: parsed.user.role ?? 'staff',
+              organization_id: parsed.user.organization_id ?? parsed.organization_id ?? '',
+            });
+          }
+        }
+      } catch {
+        if (typeof localStorage !== 'undefined') localStorage.removeItem(SESSION_STORAGE_KEY);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
     }
-  }, []);
-
-  const resetInactivityTimer = useCallback(() => {
-    if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-    if (!user) return;
-    inactivityTimerRef.current = setTimeout(() => {
-      inactivityTimerRef.current = null;
-      logoutRef.current();
-    }, INACTIVITY_MS);
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-    resetInactivityTimer();
-    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
-    events.forEach((ev) => window.addEventListener(ev, resetInactivityTimer));
+    void init();
     return () => {
-      events.forEach((ev) => window.removeEventListener(ev, resetInactivityTimer));
-      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+      cancelled = true;
     };
-  }, [user, resetInactivityTimer]);
+  }, [pathname]);
 
-  const login = async (userId: string, pin: string): Promise<boolean> => {
+  const loginWithUserId = useCallback(async (userId: string, pin: string): Promise<boolean> => {
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ userId, pin }),
       });
 
       if (!response.ok) return false;
 
-      const data = await response.json();
-      const organization_id = data.user?.organization_id ?? data.organization_id ?? '';
-      const session: Session = {
-        user: {
-          id: data.user.id,
-          name: data.user.name ?? null,
-          email: data.user.email ?? null,
-          role: data.user.role ?? 'staff',
-          organization_id,
-        },
-        organization_id,
-        login_timestamp: data.login_timestamp,
+      const data = (await response.json()) as {
+        slug?: string;
+        user: User;
+        organization_id?: string;
+        login_timestamp: string;
       };
-      setUser(session.user);
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-        setOrganizationConnected(true);
-      }
+      const organization_id = data.user?.organization_id ?? data.organization_id ?? '';
+      await persistSessionFromResponse(
+        {
+          user: {
+            id: data.user.id,
+            name: data.user.name ?? null,
+            email: data.user.email ?? null,
+            role: (data.user.role as 'admin' | 'staff') ?? 'staff',
+            organization_id,
+          },
+          organization_id,
+          login_timestamp: data.login_timestamp,
+        },
+        data.slug ?? null
+      );
+      setUser({
+        id: data.user.id,
+        name: data.user.name ?? null,
+        email: data.user.email ?? null,
+        role: (data.user.role as 'admin' | 'staff') ?? 'staff',
+        organization_id,
+      });
       return true;
     } catch {
       return false;
     }
-  };
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, loginWithUserId }}>
       {children}
     </AuthContext.Provider>
   );

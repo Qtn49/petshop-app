@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase-server';
 import { parseInvoiceWithClaude } from '@/lib/invoice/parseWithClaude';
+import { resolveInvoiceItemsSku } from '@/lib/invoice/resolveSkuInSquare';
 
 async function extractTextFromFile(
   supabase: Awaited<ReturnType<typeof getSupabaseClient>>,
@@ -111,16 +112,46 @@ export async function POST(request: Request) {
       );
     }
 
-    const { items: finalItems } = await parseInvoiceWithClaude(rawText);
+    const { items: claudeItems, totals: invoiceTotals } = await parseInvoiceWithClaude(rawText);
 
-    if (finalItems.length === 0) {
+    if (claudeItems.length === 0) {
       console.log('⚠️ No items parsed (Claude returned empty).');
       console.log(sep + '\n');
     }
 
-    const aiPredictionJson = JSON.stringify(
-      finalItems.map((i) => ({ code: i.code, name: i.name, quantity: i.quantity, price: i.price }))
-    );
+    const { data: squareConn } = await supabase
+      .from('square_connections')
+      .select('access_token')
+      .eq('user_id', userId)
+      .maybeSingle();
+    const squareToken =
+      squareConn?.access_token && String(squareConn.access_token).length > 0
+        ? String(squareConn.access_token)
+        : null;
+
+    const finalItems = await resolveInvoiceItemsSku(claudeItems, squareToken);
+
+    const aiPredictionJson = JSON.stringify({
+      items: finalItems.map((i) => ({
+        code: i.code,
+        name: i.name,
+        quantity: i.quantity,
+        price: i.price,
+        resolvedSku: i.resolvedSku,
+        potentialNewItem: i.potentialNewItem,
+        matchMethod: i.matchMethod,
+        vendorCode: i.vendorCode ?? null,
+        quantityOrdered: i.quantityOrdered ?? null,
+        quantityDelivered: i.quantityDelivered ?? null,
+        quantityBackOrder: i.quantityBackOrder ?? null,
+        unitPriceList: i.unitPriceList ?? null,
+        discountPercent: i.discountPercent ?? null,
+        lineSubtotalExGst: i.lineSubtotalExGst ?? null,
+        lineSubtotalIncGst: i.lineSubtotalIncGst ?? null,
+        isFreeItem: i.isFreeItem ?? false,
+      })),
+      totals: invoiceTotals,
+    });
 
     const firstLines = rawText.split(/\r?\n/).slice(0, 40).join('\n');
     const shipToMatch = firstLines.match(/(?:ship\s+to|deliver\s+to|bill\s+to|sold\s+to)\s*:?\s*([^\n]+)/im);
@@ -141,11 +172,11 @@ export async function POST(request: Request) {
     for (const item of finalItems) {
       await supabase.from('invoice_items').insert({
         invoice_id: invoiceId,
-        skn: item.code ?? null,
+        skn: item.resolvedSku ?? item.code ?? null,
         product_name: item.name,
         quantity: item.quantity,
         price: item.price,
-        status: 'pending',
+        status: item.dbStatus,
         matched_from_supplier_history: false,
       });
     }
@@ -164,12 +195,26 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       items: finalItems.map((i) => ({
-        skn: i.code ?? '',
+        skn: i.resolvedSku ?? i.code ?? '',
         product_name: i.name,
         quantity: i.quantity,
         price: i.price,
         matched_from_supplier_history: false,
+        resolvedSku: i.resolvedSku,
+        potentialNewItem: i.potentialNewItem,
+        matchMethod: i.matchMethod,
+        status: i.dbStatus,
+        vendorCode: i.vendorCode ?? null,
+        quantityOrdered: i.quantityOrdered ?? null,
+        quantityDelivered: i.quantityDelivered ?? null,
+        quantityBackOrder: i.quantityBackOrder ?? null,
+        unitPriceList: i.unitPriceList ?? null,
+        discountPercent: i.discountPercent ?? null,
+        lineSubtotalExGst: i.lineSubtotalExGst ?? null,
+        lineSubtotalIncGst: i.lineSubtotalIncGst ?? null,
+        isFreeItem: i.isFreeItem ?? false,
       })),
+      totals: invoiceTotals,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Parsing failed';

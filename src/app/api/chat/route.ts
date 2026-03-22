@@ -1,13 +1,19 @@
 import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSupabaseClient } from '@/lib/supabase-server';
-import { fetchSquareCatalogForUser } from '@/lib/integrations/square/fetchCatalog';
-import { fetchSquareOrdersForUser } from '@/lib/integrations/square/fetchOrders';
 
 const CLAUDE_MODEL = 'claude-sonnet-4-20250514';
 const TITLE_MODEL = 'claude-haiku-4-5-20251001';
+const MAX_TOOL_CALLS = 5;
 
-const SQUARE_TOOLS = [
+const SYSTEM_PROMPT = `You are Max, expert AI assistant for an Australian pet shop.
+You have real-time access to Square POS data via tools.
+Use tools proactively — never ask the user to provide data you can fetch.
+If Square not connected: say so briefly, then give general advice.
+Respond in markdown. Be specific with numbers. Max 3 paragraphs unless detail requested.
+Context: Queensland, Australia. Pet shop with aquariums, dogs, cats, birds, reptile supplies.`;
+
+const SQUARE_TOOLS: Anthropic.Tool[] = [
   {
     name: 'get_catalog',
     description:
@@ -49,43 +55,6 @@ const SQUARE_TOOLS = [
     },
   },
 ];
-
-const SALES_KEYWORDS = [
-  'sales',
-  'revenue',
-  'transactions',
-  'sold',
-  'selling',
-  'best seller',
-  'top product',
-  'performance',
-  'ventes',
-  'chiffre',
-];
-const INVENTORY_KEYWORDS = [
-  'stock',
-  'inventory',
-  'product',
-  'catalogue',
-  'catalog',
-  'item',
-  'produit',
-];
-const TREND_KEYWORDS = ['trend', 'slow', 'popular', 'demand', 'tendance'];
-
-function needsSquareData(message: string): {
-  catalog: boolean;
-  orders: boolean;
-} {
-  const lower = message.toLowerCase();
-  const hasSales = SALES_KEYWORDS.some((k) => lower.includes(k));
-  const hasInventory = INVENTORY_KEYWORDS.some((k) => lower.includes(k));
-  const hasTrend = TREND_KEYWORDS.some((k) => lower.includes(k));
-  return {
-    catalog: hasInventory || hasTrend,
-    orders: hasSales || hasTrend,
-  };
-}
 
 function sseData(payload: string): Uint8Array {
   const encoder = new TextEncoder();
@@ -360,83 +329,20 @@ export async function POST(request: Request) {
     .order('created_at', { ascending: true })
     .limit(20);
 
-  const messages = (history ?? []).map((m) => ({
+  // Step 1 — Fetch Square credentials
+  const { data: squareConn } = await supabase
+    .from('square_connections')
+    .select('access_token, location_id')
+    .eq('user_id', userId)
+    .single();
+  const accessToken = squareConn?.access_token ?? null;
+  const locationId = squareConn?.location_id ?? null;
+
+  const conversationMessages: Anthropic.MessageParam[] = (history ?? []).map((m) => ({
     role: m.role as 'user' | 'assistant',
     content: m.content,
   }));
-
-  messages.push({ role: 'user' as const, content: message });
-
-  const currentDate = new Date().toLocaleDateString('en-AU', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-
-  let systemPrompt = `You are Max, the AI assistant for this pet shop. You are helpful, friendly, and an expert
-in pet care, inventory management, and shop operations.
-You have access to the shop's data. When the user asks about inventory, sales, or Square
-data, you will be told to fetch it. Otherwise answer from context.
-Always respond in the same language as the user.
-Current date: ${currentDate}`;
-
-  const squareNeeds = needsSquareData(message);
-  if (squareNeeds.catalog || squareNeeds.orders) {
-    let squareContext = '\n\n=== SQUARE DATA (fetched live) ===\n';
-    squareContext += `Date: ${currentDate}\n`;
-
-    if (squareNeeds.orders) {
-      try {
-        const ordersResult = await fetchSquareOrdersForUser(userId);
-        if (!('error' in ordersResult)) {
-          const rev = (ordersResult.totalRevenueCents / 100).toFixed(2);
-          squareContext += `Last 30 days revenue: $${rev}\n`;
-          squareContext += `Orders in period: ${ordersResult.orderCount}\n`;
-          if (ordersResult.topByQuantity.length > 0) {
-            squareContext += `Top products by quantity sold:\n`;
-            ordersResult.topByQuantity.forEach(
-              (p, i) => (squareContext += `  ${i + 1}. ${p.name}: ${p.quantity} sold\n`)
-            );
-          }
-          if (ordersResult.topByRevenue.length > 0) {
-            squareContext += `Top products by revenue:\n`;
-            ordersResult.topByRevenue.forEach(
-              (p, i) =>
-                (squareContext += `  ${i + 1}. ${p.name}: $${(p.revenueCents / 100).toFixed(2)}\n`)
-            );
-          }
-          console.log('📊 Square data fetched:', ordersResult.orderCount, 'orders');
-        } else {
-          squareContext += `Orders: ${ordersResult.error}\n`;
-        }
-      } catch (e) {
-        console.log('📊 Square orders fetch failed:', e instanceof Error ? e.message : e);
-      }
-    }
-
-    if (squareNeeds.catalog) {
-      try {
-        const catalogResult = await fetchSquareCatalogForUser(userId);
-        if ('items' in catalogResult && catalogResult.items.length > 0) {
-          squareContext += `Total catalog items: ${catalogResult.items.length}\n`;
-          const sample = catalogResult.items.slice(0, 100);
-          squareContext += `Catalog sample (first 100):\n`;
-          sample.forEach(
-            (i) =>
-              (squareContext += `- ${i.name ?? 'Unnamed'} (SKU: ${i.sku ?? 'n/a'}) | Category: ${i.category ?? 'n/a'} | Variants: ${i.variations?.map((v) => `${v.name ?? 'n/a'} @ $${v.price ?? 0}`).join(', ') ?? 'n/a'}\n`)
-          );
-        } else if ('error' in catalogResult) {
-          squareContext += `Catalog: ${catalogResult.error}\n`;
-        }
-      } catch (e) {
-        console.log('📊 Square catalog fetch failed:', e instanceof Error ? e.message : e);
-      }
-    }
-
-    squareContext += '=== END SQUARE DATA ===\n';
-    systemPrompt += squareContext;
-  }
+  conversationMessages.push({ role: 'user' as const, content: message });
 
   const { error: userErr } = await supabase
     .from('chat_messages')
@@ -458,10 +364,15 @@ Current date: ${currentDate}`;
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      const sendSSEEvent = (payload: string) => {
+        controller.enqueue(sseData(payload));
+      };
+
       let fullText = '';
       try {
         const client = new Anthropic({ apiKey });
 
+        // Title generation on first message
         if (isFirstMessage) {
           const titleResponse = await client.messages.create({
             model: TITLE_MODEL,
@@ -488,20 +399,70 @@ Current date: ${currentDate}`;
             .eq('id', convId);
         }
 
-        const msgStream = client.messages.stream({
-          model: CLAUDE_MODEL,
-          max_tokens: 4096,
-          system: systemPrompt,
-          messages: messages.map((m) => ({ role: m.role, content: m.content })),
-        });
+        // Step 2 — Agentic loop
+        const loopMessages: Anthropic.MessageParam[] = [...conversationMessages];
+        let toolCallCount = 0;
 
-        msgStream.on('text', (delta: string) => {
-          fullText += delta;
-          controller.enqueue(sseData(JSON.stringify(delta)));
-        });
+        while (toolCallCount < MAX_TOOL_CALLS) {
+          const response = await client.messages.create({
+            model: CLAUDE_MODEL,
+            max_tokens: 1500,
+            system: SYSTEM_PROMPT,
+            tools: SQUARE_TOOLS,
+            messages: loopMessages,
+          });
 
-        await msgStream.finalMessage();
+          if (response.stop_reason === 'end_turn') {
+            fullText = response.content
+              .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+              .map((b) => b.text)
+              .join('');
+            sendSSEEvent(JSON.stringify(fullText));
+            break;
+          }
 
+          if (response.stop_reason === 'tool_use') {
+            loopMessages.push({
+              role: 'assistant' as const,
+              content: response.content as unknown as Anthropic.ContentBlockParam[],
+            });
+
+            const toolResults: Anthropic.ToolResultBlockParam[] = [];
+
+            for (const block of response.content) {
+              if (block.type !== 'tool_use') continue;
+              toolCallCount++;
+
+              const statusMessages: Record<string, string> = {
+                get_catalog: '🔍 Browsing your Square catalog...',
+                get_recent_sales: '📊 Fetching your sales data...',
+                search_product: '🔎 Searching for that product...',
+                get_inventory_levels: '📦 Checking stock levels...',
+              };
+              sendSSEEvent(`__STATUS__:${statusMessages[block.name] ?? '⏳ Fetching data...'}`);
+
+              const result = await executeSquareTool(
+                block.name,
+                block.input as Record<string, unknown>,
+                accessToken,
+                locationId
+              );
+              sendSSEEvent('__STATUS__:✅ Done');
+
+              toolResults.push({
+                type: 'tool_result',
+                tool_use_id: block.id,
+                content: result,
+              });
+            }
+
+            loopMessages.push({ role: 'user' as const, content: toolResults });
+          } else {
+            break;
+          }
+        }
+
+        // Save assistant response
         await supabase.from('chat_messages').insert({
           conversation_id: convId,
           role: 'assistant',
@@ -514,7 +475,7 @@ Current date: ${currentDate}`;
           .eq('id', convId);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Stream error';
-        controller.enqueue(sseData(JSON.stringify({ error: msg })));
+        sendSSEEvent(JSON.stringify({ error: msg }));
       } finally {
         controller.enqueue(encoder.encode('data: [DONE]\n\n'));
         controller.close();

@@ -24,7 +24,7 @@ export default function OnboardingPage() {
       .then((data) => {
         const configured = !!data.configured;
         const orgConnected = getOrganizationConnected();
-        if (configured && orgConnected) router.replace('/');
+        if (configured && orgConnected) router.replace('/login');
         else setReady(true);
       })
       .catch(() => setReady(true));
@@ -32,6 +32,7 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [shopSlug, setShopSlug] = useState<string | null>(null);
 
   const [company_name, setCompany_name] = useState('');
   const [address, setAddress] = useState('');
@@ -71,6 +72,7 @@ export default function OnboardingPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save');
       if (data.id) setOrganizationId(data.id);
+      if (data.slug) setShopSlug(data.slug);
       setStep(2);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
@@ -137,7 +139,8 @@ export default function OnboardingPage() {
         if (!res.ok) throw new Error(data.error || 'Failed to create user');
       }
       setOrganizationConnected(true);
-      router.replace('/');
+      const dest = shopSlug ? `/${shopSlug}/dashboard` : '/';
+      router.replace(dest);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create users');
@@ -148,7 +151,8 @@ export default function OnboardingPage() {
 
   const skipStep3 = () => {
     setOrganizationConnected(true);
-    router.replace('/');
+    const dest = shopSlug ? `/${shopSlug}/dashboard` : '/';
+    router.replace(dest);
     router.refresh();
   };
 

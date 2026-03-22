@@ -9,7 +9,7 @@ export default function SessionReturnTracker() {
   const pathname = usePathname();
   useEffect(() => {
     if (!pathname) return;
-    if (pathname === '/settings') return;
+    if (pathname?.includes('/settings')) return;
     const full = pathname + (typeof window !== 'undefined' ? window.location.search : '');
     saveLastPath(full);
   }, [pathname]);

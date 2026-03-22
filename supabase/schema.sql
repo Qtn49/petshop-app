@@ -22,6 +22,7 @@ CREATE POLICY "Allow invoices read" ON storage.objects
 CREATE TABLE IF NOT EXISTS organization (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   company_name TEXT NOT NULL,
+  slug TEXT UNIQUE,
   address TEXT,
   email TEXT,
   phone TEXT,
@@ -30,6 +31,22 @@ CREATE TABLE IF NOT EXISTS organization (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Vendor / internal SKU mapping per organization (multitenant catalog alignment)
+CREATE TABLE IF NOT EXISTS sku_mapping (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID REFERENCES organization(id) ON DELETE CASCADE,
+  vendor_code TEXT NOT NULL,
+  sku TEXT,
+  vendor_name TEXT,
+  product_name TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sku_mapping_org ON sku_mapping(organization_id);
+CREATE INDEX IF NOT EXISTS idx_sku_mapping_vendor_code ON sku_mapping(organization_id, vendor_code);
+CREATE INDEX IF NOT EXISTS idx_sku_mapping_sku ON sku_mapping(organization_id, sku);
 
 -- Users table (PIN-based; one organization per user; role for admin/staff)
 CREATE TABLE users (

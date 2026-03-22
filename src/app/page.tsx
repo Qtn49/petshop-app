@@ -1,129 +1,69 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/contexts/AuthContext';
-import LoginForm from '@/components/auth/LoginForm';
-import InitialScreen from '@/components/auth/InitialScreen';
-import { RefreshCw, AlertCircle } from 'lucide-react';
-import { getOrganizationConnected } from '@/lib/organization-connection';
-import { getAndClearReturnPathAfterOrg } from '@/lib/sessionReturnPath';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
-const STATUS_TIMEOUT_MS = 15000;
+const LAST_SLUG_KEY = 'ps_last_slug';
 
-export default function HomePage() {
-  const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
-  const [orgConnected, setOrgConnected] = useState<boolean | null>(null);
-  const [onboardingChecked, setOnboardingChecked] = useState(false);
-  const [configured, setConfigured] = useState<boolean | null>(null);
-  const [statusError, setStatusError] = useState<string | null>(null);
+export default function LandingPage() {
+  const [lastSlug, setLastSlug] = useState<string | null>(null);
 
   useEffect(() => {
-    setOrgConnected(getOrganizationConnected());
+    try {
+      const s = localStorage.getItem(LAST_SLUG_KEY);
+      if (s?.trim()) setLastSlug(s.trim().toLowerCase());
+    } catch {
+      setLastSlug(null);
+    }
   }, []);
 
-  const fetchStatus = useCallback(() => {
-    setStatusError(null);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), STATUS_TIMEOUT_MS);
-    fetch('/api/onboarding/status', { signal: controller.signal, cache: 'no-store' })
-      .then((r) => r.json())
-      .then((data) => {
-        clearTimeout(timeoutId);
-        setConfigured(!!data.configured);
-        setOnboardingChecked(true);
-      })
-      .catch((err) => {
-        clearTimeout(timeoutId);
-        if (err.name === 'AbortError') {
-          setStatusError('timeout');
-        } else {
-          setStatusError('error');
-        }
-        setConfigured(false);
-        setOnboardingChecked(true);
-      });
-  }, []);
-
-  useEffect(() => {
-    if (orgConnected === true) fetchStatus();
-  }, [orgConnected, fetchStatus]);
-
-  useEffect(() => {
-    if (orgConnected !== true) return;
-    if (!onboardingChecked || configured === null) return;
-    if (!configured) {
-      router.replace('/onboarding');
-      return;
-    }
-    if (!authLoading && user) {
-      const returnPath = getAndClearReturnPathAfterOrg();
-      if (returnPath && returnPath.startsWith('/')) {
-        router.replace(returnPath);
-      } else {
-        router.replace('/dashboard');
-      }
-    }
-  }, [orgConnected, onboardingChecked, configured, authLoading, user, router]);
-
-  if (orgConnected === false) {
-    return <InitialScreen />;
-  }
-
-  if (orgConnected === null) {
-    return <div className="min-h-screen bg-slate-50" />;
-  }
-
-  if (!onboardingChecked || configured === null) {
-    if (statusError) {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-          <div className="max-w-sm w-full bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-center">
-            <AlertCircle className="w-10 h-10 text-amber-500 mx-auto mb-3" />
-            <h2 className="font-semibold text-slate-800 mb-1">Connection issue</h2>
-            <p className="text-sm text-slate-600 mb-4">
-              {statusError === 'timeout'
-                ? 'The app is taking too long to respond. If you’re using ngrok or a tunnel, open this URL in a new tab and accept the connection warning, then retry.'
-                : 'Could not reach the server. Check your connection and retry.'}
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setOnboardingChecked(false);
-                setConfigured(null);
-                setStatusError(null);
-                fetchStatus();
-              }}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm font-medium"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Retry
-            </button>
+  return (
+    <div className="min-h-screen bg-[#FFF8F0] flex flex-col">
+      <header className="border-b border-amber-200/50 bg-white/80 backdrop-blur-sm">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 font-bold text-xl text-stone-800">
+            <span aria-hidden>🐾</span>
+            Pet Shop Manager
           </div>
         </div>
-      );
-    }
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4 gap-4">
-        <p className="text-xs text-slate-500 text-center max-w-xs">
-          If the app doesn’t load, open this URL in a new tab, accept any connection warning (e.g. ngrok), then refresh.
-        </p>
-      </div>
-    );
-  }
+      </header>
 
-  if (!configured) {
-    return null;
-  }
+      <main className="flex-1 flex flex-col items-center justify-center px-4 py-16 text-center">
+        <p className="text-amber-800/80 text-sm font-medium uppercase tracking-widest mb-3">Welcome</p>
+        <h1 className="text-4xl sm:text-5xl font-extrabold text-stone-900 max-w-2xl leading-tight">Pet Shop Manager</h1>
+        <p className="mt-4 text-lg text-stone-600 max-w-lg">Run your shop from one calm, simple place.</p>
 
-  if (authLoading) {
-    return <div className="min-h-screen bg-slate-50" />;
-  }
+        {lastSlug && (
+          <div className="mt-10 w-full max-w-md rounded-2xl border border-amber-200/80 bg-white/90 p-5 shadow-warm-sm text-left">
+            <p className="text-sm font-medium text-stone-700">Continue as {lastSlug}?</p>
+            <Link
+              href={`/${lastSlug}/select-user`}
+              className="mt-3 inline-flex w-full justify-center py-3 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 font-semibold transition"
+            >
+              Go to {lastSlug}
+            </Link>
+          </div>
+        )}
 
-  if (user) {
-    return null;
-  }
+        <div className={`mt-10 flex flex-col sm:flex-row gap-4 w-full max-w-md justify-center ${lastSlug ? 'mt-6' : ''}`}>
+          <Link
+            href="/login"
+            className="inline-flex justify-center items-center px-8 py-3.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-lg shadow-amber-900/15 transition"
+          >
+            Sign in to my shop
+          </Link>
+          <Link
+            href="/register"
+            className="inline-flex justify-center items-center px-8 py-3.5 rounded-xl border-2 border-amber-700/25 bg-white text-stone-900 font-semibold hover:bg-amber-50 transition"
+          >
+            Get your own shop
+          </Link>
+        </div>
+      </main>
 
-  return <LoginForm />;
+      <footer className="border-t border-amber-200/40 py-6 text-center text-sm text-stone-500">
+        © {new Date().getFullYear()} Pet Shop Manager
+      </footer>
+    </div>
+  );
 }

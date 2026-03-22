@@ -1,0 +1,1 @@
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS ai_price_suggestions BOOLEAN DEFAULT FALSE;

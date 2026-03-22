@@ -25,6 +25,19 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+
+  /**
+   * Auth pages (login / register): warm cream + subtle paw-dot texture
+   */
+  .bg-auth-cream {
+    background-color: #fff8f0;
+    background-image:
+      radial-gradient(circle at 18% 22%, rgba(217, 119, 6, 0.07) 2px, transparent 2.5px),
+      radial-gradient(circle at 72% 68%, rgba(245, 158, 11, 0.06) 1.5px, transparent 2px),
+      radial-gradient(circle at 48% 48%, rgba(217, 119, 6, 0.045) 1px, transparent 1.5px);
+    background-size: 32px 36px, 28px 28px, 22px 24px;
+    background-position: 0 0, 14px 18px, 7px 9px;
+  }
 }
 
 @keyframes missing-bg {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase-server';
 import { verifyPin, validatePinFormat } from '@/lib/auth/pin';
+import { appendSessionCookies } from '@/lib/auth/session-cookie';
 
 type Body = { organizationIdentifier: string; userName: string; pin: string };
 
@@ -25,12 +26,16 @@ export async function POST(request: Request) {
 
     const { data: orgList } = await supabase
       .from('organization')
-      .select('id')
+      .select('id, slug')
       .ilike('company_name', orgId)
       .limit(1);
     const org = Array.isArray(orgList) && orgList.length > 0 ? orgList[0] : null;
     if (!org?.id) {
       return NextResponse.json({ error: 'Organization not found' }, { status: 401 });
+    }
+    const orgSlug = (org as { slug?: string | null }).slug;
+    if (!orgSlug) {
+      return NextResponse.json({ error: 'Organization has no URL slug' }, { status: 500 });
     }
 
     const { data: user, error: userError } = await supabase
@@ -51,7 +56,7 @@ export async function POST(request: Request) {
     }
 
     const role = (user as { role?: string }).role ?? 'staff';
-    return NextResponse.json({
+    const json = NextResponse.json({
       user: {
         id: user.id,
         name: user.name,
@@ -60,7 +65,13 @@ export async function POST(request: Request) {
         organization_id: org.id,
       },
       organization_id: org.id,
+      slug: orgSlug,
       login_timestamp: new Date().toISOString(),
+    });
+    return appendSessionCookies(json, {
+      userId: user.id as string,
+      organizationId: org.id as string,
+      slug: orgSlug,
     });
   } catch {
     return NextResponse.json({ error: 'Server error' }, { status: 500 });

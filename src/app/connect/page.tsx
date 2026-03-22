@@ -51,7 +51,8 @@ export default function ConnectPage() {
       };
       localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
       setOrganizationConnected(true);
-      window.location.href = '/dashboard';
+      const slug = (data as { slug?: string }).slug;
+      window.location.href = slug ? `/${slug}/dashboard` : '/';
     } catch {
       setError('Connection failed');
     } finally {

@@ -37,6 +37,31 @@ const config: Config = {
         warm:
           '0 4px 24px -4px rgba(217, 119, 6, 0.12), 0 2px 8px -2px rgba(28, 16, 8, 0.06)',
         'warm-sm': '0 2px 12px -2px rgba(217, 119, 6, 0.1)',
+        /** Login/register card — soft amber wash */
+        'amber-100':
+          '0 8px 40px -12px rgba(254, 243, 199, 0.95), 0 4px 16px -4px rgba(217, 119, 6, 0.12)',
+      },
+      keyframes: {
+        shake: {
+          '0%, 100%': { transform: 'translateX(0)' },
+          '20%': { transform: 'translateX(-6px)' },
+          '40%': { transform: 'translateX(6px)' },
+          '60%': { transform: 'translateX(-4px)' },
+          '80%': { transform: 'translateX(4px)' },
+        },
+        'paw-drift': {
+          '0%': { backgroundPosition: '0 0' },
+          '100%': { backgroundPosition: '120px 80px' },
+        },
+        'pin-step-in': {
+          '0%': { opacity: '0', transform: 'translateY(24px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+      animation: {
+        shake: 'shake 0.45s ease-in-out',
+        'paw-drift': 'paw-drift 90s linear infinite',
+        'pin-step-in': 'pin-step-in 0.35s ease-out both',
       },
     },
   },

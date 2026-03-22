@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { exchangeCodeForToken } from '@/lib/integrations/square/squareOAuth';
 import { saveConnection, verifyAndConsumeState } from '@/lib/integrations/square/squareService';
-
-const SETTINGS_PATH = '/settings';
+import { getSlugForUserId } from '@/lib/organization-slug';
 
 /** Build origin for redirect; use http for localhost (never https://localhost). Prefer stored redirectUri so we send user back to the host they started from (e.g. ngrok). */
 function getAppOrigin(request: Request, fromRedirectUri?: string | null): string {
@@ -38,9 +37,21 @@ function getAppOrigin(request: Request, fromRedirectUri?: string | null): string
   );
 }
 
-function redirectToSettings(request: Request, params?: Record<string, string>, fromRedirectUri?: string | null) {
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function redirectToSettings(
+  request: Request,
+  params?: Record<string, string>,
+  fromRedirectUri?: string | null,
+  userId?: string | null
+) {
   const origin = getAppOrigin(request, fromRedirectUri);
-  const url = new URL(SETTINGS_PATH, origin);
+  let path = '/settings';
+  if (userId && UUID_RE.test(userId)) {
+    const slug = await getSlugForUserId(userId);
+    if (slug) path = `/${slug}/settings`;
+  }
+  const url = new URL(path, origin);
   if (params) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   }
@@ -59,25 +70,40 @@ export async function GET(request: Request) {
 
   if (errorParam) {
     const description = searchParams.get('error_description') || 'Authorization was denied or cancelled.';
-    return redirectToSettings(request, {
-      square_error: 'auth_failed',
-      square_error_description: description,
-    });
+    return redirectToSettings(
+      request,
+      {
+        square_error: 'auth_failed',
+        square_error_description: description,
+      },
+      null,
+      null
+    );
   }
 
   if (!code || !state) {
-    return redirectToSettings(request, {
-      square_error: 'invalid_callback',
-      square_error_description: 'Missing code or state.',
-    });
+    return redirectToSettings(
+      request,
+      {
+        square_error: 'invalid_callback',
+        square_error_description: 'Missing code or state.',
+      },
+      null,
+      null
+    );
   }
 
   const stateResult = await verifyAndConsumeState(state);
   if (!stateResult) {
-    return redirectToSettings(request, {
-      square_error: 'invalid_state',
-      square_error_description: 'Invalid or expired state. Please try connecting again.',
-    });
+    return redirectToSettings(
+      request,
+      {
+        square_error: 'invalid_state',
+        square_error_description: 'Invalid or expired state. Please try connecting again.',
+      },
+      null,
+      null
+    );
   }
 
   const { userId, redirectUri } = stateResult;
@@ -85,12 +111,17 @@ export async function GET(request: Request) {
   try {
     const tokens = await exchangeCodeForToken(code, redirectUri ?? undefined);
     await saveConnection(userId, tokens);
-    return redirectToSettings(request, { square_connected: '1' }, redirectUri);
+    return redirectToSettings(request, { square_connected: '1' }, redirectUri, userId);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to connect Square';
-    return redirectToSettings(request, {
-      square_error: 'token_exchange',
-      square_error_description: message,
-    }, redirectUri);
+    return redirectToSettings(
+      request,
+      {
+        square_error: 'token_exchange',
+        square_error_description: message,
+      },
+      redirectUri,
+      userId
+    );
   }
 }

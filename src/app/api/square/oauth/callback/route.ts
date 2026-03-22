@@ -1,14 +1,16 @@
 import { NextResponse } from 'next/server';
 import { exchangeCodeForToken } from '@/lib/integrations/square/squareOAuth';
 import { saveConnection } from '@/lib/integrations/square/squareService';
+import { getSlugForUserId } from '@/lib/organization-slug';
 
-const SETTINGS_PATH = '/settings';
 const APP_ORIGIN =
   process.env.NEXT_PUBLIC_APP_URL ||
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
   '';
 
-function redirect(path: string, params?: Record<string, string>) {
+async function redirectToSettings(userId: string, params?: Record<string, string>) {
+  const slug = await getSlugForUserId(userId);
+  const path = slug ? `/${slug}/settings` : '/settings';
   const url = new URL(path, APP_ORIGIN || 'http://localhost:3000');
   if (params) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
@@ -22,29 +24,28 @@ export async function GET(request: Request) {
   const state = searchParams.get('state'); // userId
   const errorParam = searchParams.get('error');
 
-  // User cancelled or Square returned an error
   if (errorParam) {
     const description = searchParams.get('error_description') || 'Authorization was denied or cancelled.';
-    return redirect(SETTINGS_PATH, {
-      square_error: 'auth_failed',
-      square_error_description: description,
-    });
+    const url = new URL('/settings', APP_ORIGIN || 'http://localhost:3000');
+    url.searchParams.set('square_error', 'auth_failed');
+    url.searchParams.set('square_error_description', description);
+    return NextResponse.redirect(url.toString());
   }
 
   if (!code || !state) {
-    return redirect(SETTINGS_PATH, {
-      square_error: 'invalid_callback',
-      square_error_description: 'Missing code or state.',
-    });
+    const url = new URL('/settings', APP_ORIGIN || 'http://localhost:3000');
+    url.searchParams.set('square_error', 'invalid_callback');
+    url.searchParams.set('square_error_description', 'Missing code or state.');
+    return NextResponse.redirect(url.toString());
   }
 
   try {
     const tokens = await exchangeCodeForToken(code);
     await saveConnection(state, tokens);
-    return redirect(SETTINGS_PATH, { square_connected: '1' });
+    return redirectToSettings(state, { square_connected: '1' });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to connect Square';
-    return redirect(SETTINGS_PATH, {
+    return redirectToSettings(state, {
       square_error: 'token_exchange',
       square_error_description: message,
     });

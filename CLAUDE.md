@@ -14,7 +14,7 @@ npm test             # Run tests with Vitest
 # Database migrations
 npm run db:push:dev  # Push migrations to dev Supabase
 npm run db:push:prod # Push migrations to prod Supabase
-npm run db:push:all  # Push to both environments
+npm run db:push:all  # Push to both environments — ALWAYS use this to push migrations
 ```
 
 ## Architecture Overview
@@ -78,3 +78,4 @@ React Context providers (applied in `src/app/layout.tsx`):
 - Tenant-aware links use `useTenantHref` hook (`src/hooks/useTenantHref.ts`) to prefix paths with `/[slug]`
 - Functional components only, async/await throughout
 - Tailwind primary color is amber (`#f59e0b`), sidebar background is deep brown (`#1C1008`)
+- **Language**: All application code, UI text, labels, comments, variable names, and error messages must be in English — regardless of the language used in conversation.

@@ -11,6 +11,11 @@ import PageLoader from '@/components/ui/PageLoader';
 export const metadata: Metadata = {
   title: 'Pet Shop Manager',
   description: 'Pet Shop Management SaaS',
+  icons: {
+    icon: '/logo.png',
+    shortcut: '/logo.png',
+    apple: '/apple-touch-icon.png',
+  },
 };
 
 export default function RootLayout({

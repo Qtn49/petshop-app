@@ -8,7 +8,7 @@ import { User } from 'lucide-react';
 type UserItem = { id: string; name: string | null; role: string; organization_name?: string };
 
 export default function LoginForm() {
-  const { login } = useAuth();
+  const { loginWithUserId } = useAuth();
   const [users, setUsers] = useState<UserItem[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -31,7 +31,7 @@ export default function LoginForm() {
     if (!selectedUserId || !pin) return;
     setError('');
     setSubmitting(true);
-    const success = await login(selectedUserId, pin);
+    const success = await loginWithUserId(selectedUserId, pin);
     setSubmitting(false);
     if (!success) {
       setError('Invalid PIN. Please try again.');

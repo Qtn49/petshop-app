@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "generate-favicon": "tsx scripts/generate-favicon.ts",
     "test": "vitest run",
     "db:push:dev": "npx supabase db push --db-url postgresql://postgres:tiwhow-dupKub-7matwe@db.umgbyfhnqtohlhrghpej.supabase.co:5432/postgres",
     "db:push:prod": "npx supabase db push --db-url postgresql://postgres:fAkkas-mobviz-hoqfi4@db.jhywqbptbgolyytqkpha.supabase.co:5432/postgres",
@@ -21,6 +22,7 @@
     "date-fns": "^3.6.0",
     "framer-motion": "^12.38.0",
     "gsap": "^3.14.2",
+    "jose": "^6.2.2",
     "lottie-react": "^2.4.1",
     "lucide-react": "^0.454.0",
     "next": "^14.2.0",
@@ -40,7 +42,10 @@
     "eslint": "^8.57.0",
     "eslint-config-next": "^14.2.0",
     "postcss": "^8.4.0",
+    "sharp": "^0.34.5",
     "tailwindcss": "^3.4.0",
+    "to-ico": "^1.1.5",
+    "tsx": "^4.21.0",
     "typescript": "^5.0.0",
     "vitest": "^3.2.4"
   }
