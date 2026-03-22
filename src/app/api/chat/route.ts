@@ -7,6 +7,49 @@ import { fetchSquareOrdersForUser } from '@/lib/integrations/square/fetchOrders'
 const CLAUDE_MODEL = 'claude-sonnet-4-20250514';
 const TITLE_MODEL = 'claude-haiku-4-5-20251001';
 
+const SQUARE_TOOLS = [
+  {
+    name: 'get_catalog',
+    description:
+      'Fetch the pet shop Square product catalog. Use when user asks about products, inventory, items or stock.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        limit: { type: 'number', description: 'Max items, default 100' },
+        search_term: { type: 'string', description: 'Optional product name filter' },
+      },
+    },
+  },
+  {
+    name: 'get_recent_sales',
+    description:
+      'Fetch recent Square sales. Use when asked about revenue, performance, best sellers or trends.',
+    input_schema: {
+      type: 'object' as const,
+      properties: { days: { type: 'number', description: 'Days back, default 30' } },
+    },
+  },
+  {
+    name: 'search_product',
+    description: 'Search Square catalog by name or SKU.',
+    input_schema: {
+      type: 'object' as const,
+      properties: { query: { type: 'string', description: 'Product name or SKU' } },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'get_inventory_levels',
+    description: 'Get current stock levels. Use when asked about restocking or inventory health.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        low_stock_only: { type: 'boolean', description: 'Only low/zero stock' },
+      },
+    },
+  },
+];
+
 const SALES_KEYWORDS = [
   'sales',
   'revenue',
@@ -47,6 +90,217 @@ function needsSquareData(message: string): {
 function sseData(payload: string): Uint8Array {
   const encoder = new TextEncoder();
   return encoder.encode(`data: ${payload}\n\n`);
+}
+
+const SQUARE_BASE = 'https://connect.squareup.com';
+
+async function executeSquareTool(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  accessToken: string | null,
+  locationId: string | null
+): Promise<string> {
+  if (!accessToken) return 'Square is not connected.';
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+    'Square-Version': '2024-01-17',
+    'Content-Type': 'application/json',
+  };
+
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 5000);
+
+  try {
+    switch (toolName) {
+      case 'get_catalog': {
+        const limit = Math.min((toolInput.limit as number) ?? 100, 50);
+        const searchTerm = toolInput.search_term as string | undefined;
+
+        const resp = await fetch(`${SQUARE_BASE}/v2/catalog/list?types=ITEM`, {
+          headers,
+          signal: abort.signal,
+        });
+        const data = (await resp.json()) as {
+          objects?: Array<{
+            id: string;
+            item_data?: {
+              name?: string;
+              variations?: Array<{
+                item_variation_data?: { sku?: string; price_money?: { amount?: number } };
+              }>;
+            };
+          }>;
+          errors?: Array<{ detail?: string }>;
+        };
+
+        if (!resp.ok)
+          return `Error fetching catalog: ${data.errors?.[0]?.detail ?? resp.statusText}`;
+
+        let items = data.objects ?? [];
+        if (searchTerm) {
+          const term = searchTerm.toLowerCase();
+          items = items.filter((o) => o.item_data?.name?.toLowerCase().includes(term));
+        }
+        items = items.slice(0, limit);
+
+        const lines = items.map((o) => {
+          const name = o.item_data?.name ?? 'Unknown';
+          const variation = o.item_data?.variations?.[0]?.item_variation_data;
+          const sku = variation?.sku ?? 'n/a';
+          const price = variation?.price_money?.amount
+            ? `$${(variation.price_money.amount / 100).toFixed(2)}`
+            : 'no price';
+          return `- ${name}: ${price} (SKU: ${sku})`;
+        });
+
+        return `Found ${items.length} products:\n${lines.join('\n')}`;
+      }
+
+      case 'get_recent_sales': {
+        const days = (toolInput.days as number) ?? 30;
+        const startAt = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+        const endAt = new Date().toISOString();
+
+        const resp = await fetch(`${SQUARE_BASE}/v2/orders/search`, {
+          method: 'POST',
+          headers,
+          signal: abort.signal,
+          body: JSON.stringify({
+            location_ids: locationId ? [locationId] : undefined,
+            query: {
+              filter: {
+                date_time_filter: { created_at: { start_at: startAt, end_at: endAt } },
+                state_filter: { states: ['COMPLETED'] },
+              },
+              sort: { sort_field: 'CREATED_AT', sort_order: 'DESC' },
+            },
+            limit: 500,
+          }),
+        });
+        const data = (await resp.json()) as {
+          orders?: Array<{
+            net_amounts?: { total_money?: { amount?: number } };
+            line_items?: Array<{
+              name?: string;
+              quantity?: string;
+              base_price_money?: { amount?: number };
+            }>;
+          }>;
+          errors?: Array<{ detail?: string }>;
+        };
+
+        if (!resp.ok)
+          return `Error fetching sales: ${data.errors?.[0]?.detail ?? resp.statusText}`;
+
+        const orders = data.orders ?? [];
+        let totalRevenueCents = 0;
+        const productMap = new Map<string, { quantity: number; revenue: number }>();
+
+        for (const order of orders) {
+          totalRevenueCents += order.net_amounts?.total_money?.amount ?? 0;
+          for (const item of order.line_items ?? []) {
+            const name = item.name ?? 'Unknown';
+            const qty = parseFloat(item.quantity ?? '0');
+            const rev = (item.base_price_money?.amount ?? 0) * qty;
+            const existing = productMap.get(name) ?? { quantity: 0, revenue: 0 };
+            productMap.set(name, { quantity: existing.quantity + qty, revenue: existing.revenue + rev });
+          }
+        }
+
+        const top10 = Array.from(productMap.entries())
+          .sort((a, b) => b[1].quantity - a[1].quantity)
+          .slice(0, 10)
+          .map(([name, d], i) => `  ${i + 1}. ${name}: ${d.quantity} sold`)
+          .join('\n');
+
+        return `Sales summary (last ${days} days):\n- Total revenue: $${(totalRevenueCents / 100).toFixed(2)}\n- Orders: ${orders.length}\n- Top products by quantity:\n${top10}`;
+      }
+
+      case 'search_product': {
+        const query = toolInput.query as string;
+
+        const resp = await fetch(`${SQUARE_BASE}/v2/catalog/search`, {
+          method: 'POST',
+          headers,
+          signal: abort.signal,
+          body: JSON.stringify({
+            object_types: ['ITEM'],
+            text_query: { keywords: [query] },
+            limit: 5,
+          }),
+        });
+        const data = (await resp.json()) as {
+          objects?: Array<{
+            item_data?: {
+              name?: string;
+              variations?: Array<{
+                item_variation_data?: { sku?: string; price_money?: { amount?: number } };
+              }>;
+            };
+          }>;
+          errors?: Array<{ detail?: string }>;
+        };
+
+        if (!resp.ok)
+          return `Error searching products: ${data.errors?.[0]?.detail ?? resp.statusText}`;
+
+        const objects = data.objects ?? [];
+        if (objects.length === 0) return `No products found for "${query}".`;
+
+        const lines = objects.map((o) => {
+          const name = o.item_data?.name ?? 'Unknown';
+          const variation = o.item_data?.variations?.[0]?.item_variation_data;
+          const sku = variation?.sku ?? 'n/a';
+          const price = variation?.price_money?.amount
+            ? `$${(variation.price_money.amount / 100).toFixed(2)}`
+            : 'no price';
+          return `- ${name}: ${price} (SKU: ${sku})`;
+        });
+
+        return `Found ${objects.length} products matching "${query}":\n${lines.join('\n')}`;
+      }
+
+      case 'get_inventory_levels': {
+        const lowStockOnly = toolInput.low_stock_only as boolean | undefined;
+        const url = locationId
+          ? `${SQUARE_BASE}/v2/inventory/counts?location_ids=${locationId}`
+          : `${SQUARE_BASE}/v2/inventory/counts`;
+
+        const resp = await fetch(url, { headers, signal: abort.signal });
+        const data = (await resp.json()) as {
+          counts?: Array<{ catalog_object_id?: string; quantity?: string; state?: string }>;
+          errors?: Array<{ detail?: string }>;
+        };
+
+        if (!resp.ok)
+          return `Error fetching inventory: ${data.errors?.[0]?.detail ?? resp.statusText}`;
+
+        let counts = (data.counts ?? []).filter((c) => c.state === 'IN_STOCK');
+        if (lowStockOnly) {
+          counts = counts.filter((c) => parseFloat(c.quantity ?? '0') <= 5);
+        }
+
+        if (counts.length === 0)
+          return lowStockOnly ? 'No low stock items found.' : 'No inventory data available.';
+
+        const lines = counts.slice(0, 50).map((c) => {
+          const qty = parseFloat(c.quantity ?? '0');
+          const label = qty === 0 ? 'OUT OF STOCK' : qty <= 5 ? 'LOW' : 'OK';
+          return `- Item ${c.catalog_object_id}: ${qty} units [${label}]`;
+        });
+
+        return `Inventory levels (${lowStockOnly ? 'low stock only' : 'all items'}):\n${lines.join('\n')}`;
+      }
+
+      default:
+        return `Unknown tool: ${toolName}`;
+    }
+  } catch (err) {
+    return err instanceof Error ? err.message : 'Tool execution error';
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function POST(request: Request) {
