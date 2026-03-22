@@ -5,7 +5,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { Upload, FileText, Loader2, X, ChevronRight } from 'lucide-react';
+import InlineLoader from '@/components/ui/InlineLoader';
+import { Upload, FileText, X, ChevronRight } from 'lucide-react';
 import { useInvoices } from '@/hooks/use-invoices';
 
 const ACCEPTED_TYPES = '.pdf,.xlsx,.xls,.csv';
@@ -210,10 +211,10 @@ export default function InvoicesPage() {
           <div className="mt-4">
             <Button onClick={handleUpload} disabled={!files.length || uploading}>
               {uploading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <span className="inline-flex items-center gap-2">
+                  <InlineLoader size={24} />
                   Uploading...
-                </>
+                </span>
               ) : (
                 <>
                   <Upload className="w-4 h-4 mr-2" />

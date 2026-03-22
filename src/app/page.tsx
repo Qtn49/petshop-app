@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import LoginForm from '@/components/auth/LoginForm';
 import InitialScreen from '@/components/auth/InitialScreen';
-import { Loader2, RefreshCw, AlertCircle } from 'lucide-react';
+import { RefreshCw, AlertCircle } from 'lucide-react';
 import { getOrganizationConnected } from '@/lib/organization-connection';
 import { getAndClearReturnPathAfterOrg } from '@/lib/sessionReturnPath';
 
@@ -72,11 +72,7 @@ export default function HomePage() {
   }
 
   if (orgConnected === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
-      </div>
-    );
+    return <div className="min-h-screen bg-slate-50" />;
   }
 
   if (!onboardingChecked || configured === null) {
@@ -110,7 +106,6 @@ export default function HomePage() {
     }
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4 gap-4">
-        <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
         <p className="text-xs text-slate-500 text-center max-w-xs">
           If the app doesn’t load, open this URL in a new tab, accept any connection warning (e.g. ngrok), then refresh.
         </p>
@@ -123,11 +118,7 @@ export default function HomePage() {
   }
 
   if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
-      </div>
-    );
+    return <div className="min-h-screen bg-slate-50" />;
   }
 
   if (user) {

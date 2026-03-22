@@ -5,7 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { Loader2, AlertCircle, ArrowLeft } from 'lucide-react';
+import InlineLoader from '@/components/ui/InlineLoader';
+import { AlertCircle, ArrowLeft } from 'lucide-react';
 import { getConfirmItemsKey } from '@/lib/invoice-import/steps';
 import type { ConfirmItem, RequiredField } from '@/lib/invoice-import/confirm-types';
 import { getMissingFields } from '@/lib/invoice-import/confirm-types';
@@ -276,7 +277,7 @@ export default function InvoiceConfirmPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+        <InlineLoader label="Loading..." />
       </div>
     );
   }
@@ -389,10 +390,10 @@ export default function InvoiceConfirmPage() {
             disabled={submitting || includedItems.length === 0}
           >
             {submitting ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <span className="inline-flex items-center gap-2">
+                <InlineLoader size={24} />
                 Creating...
-              </>
+              </span>
             ) : (
               'Create items and download purchase order'
             )}

@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss';
+import typography from '@tailwindcss/typography';
 
 const config: Config = {
   content: [
@@ -9,22 +10,37 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        /** Brand primary — amber (actions, links, focus) */
         primary: {
-          50: '#f0fdf4',
-          100: '#dcfce7',
-          200: '#bbf7d0',
-          300: '#86efac',
-          400: '#4ade80',
-          500: '#22c55e',
-          600: '#16a34a',
-          700: '#15803d',
-          800: '#166534',
-          900: '#14532d',
+          50: '#fffbeb',
+          100: '#fef3c7',
+          200: '#fde68a',
+          300: '#fcd34d',
+          400: '#fbbf24',
+          500: '#f59e0b',
+          600: '#d97706',
+          700: '#b45309',
+          800: '#92400e',
+          900: '#78350f',
         },
+        /** Page wash */
+        warm: {
+          50: '#FFFBF5',
+        },
+        /** Deep sidebar */
+        sidebar: {
+          DEFAULT: '#1C1008',
+          muted: '#2d1f14',
+        },
+      },
+      boxShadow: {
+        warm:
+          '0 4px 24px -4px rgba(217, 119, 6, 0.12), 0 2px 8px -2px rgba(28, 16, 8, 0.06)',
+        'warm-sm': '0 2px 12px -2px rgba(217, 119, 6, 0.1)',
       },
     },
   },
-  plugins: [],
+  plugins: [typography],
 };
 
 export default config;

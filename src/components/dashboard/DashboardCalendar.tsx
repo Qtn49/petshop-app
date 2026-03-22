@@ -77,7 +77,7 @@ export default function DashboardCalendar({
     const height = selectedDate ? 'h-7' : 'h-full min-h-[28px]';
     const base = `w-full ${height} flex items-center justify-center rounded text-xs cursor-pointer transition font-medium relative`;
     if (!isSameMonth(d, monthStart)) {
-      return `${base} text-slate-300`;
+      return `${base} text-stone-300`;
     }
     const isToday = isSameDay(d, today);
     const isSelected = selectedDate && isSameDay(d, selectedDate);
@@ -87,7 +87,7 @@ export default function DashboardCalendar({
     if (isToday) {
       return `${base} bg-primary-100 text-primary-800 font-bold ring-1 ring-primary-400`;
     }
-    return `${base} text-slate-700 hover:bg-slate-100`;
+    return `${base} text-stone-700 hover:bg-amber-50/80`;
   };
 
   const getTaskCount = (d: Date) => {
@@ -96,22 +96,22 @@ export default function DashboardCalendar({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col h-full">
-      <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
-        <h2 className="font-semibold text-slate-800 text-sm">Calendar</h2>
+    <div className="overflow-hidden flex flex-col h-full min-h-0">
+      <div className="px-3 py-2 border-b border-amber-50/90 flex items-center justify-between flex-shrink-0">
+        <h2 className="font-semibold text-stone-800 text-sm">Calendar</h2>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setCurrentDate(subMonths(currentDate, 1))}
-            className="p-1 rounded hover:bg-slate-100 text-slate-600 text-sm"
+            className="p-1 rounded-lg hover:bg-amber-50 text-stone-600 text-sm"
           >
             ‹
           </button>
-          <span className="px-2 py-1 font-medium text-slate-800 text-xs min-w-[100px] text-center">
+          <span className="px-2 py-1 font-medium text-stone-800 text-xs min-w-[100px] text-center">
             {format(currentDate, 'MMM yyyy')}
           </span>
           <button
             onClick={() => setCurrentDate(addMonths(currentDate, 1))}
-            className="p-1 rounded hover:bg-slate-100 text-slate-600 text-sm"
+            className="p-1 rounded-lg hover:bg-amber-50 text-stone-600 text-sm"
           >
             ›
           </button>
@@ -122,7 +122,7 @@ export default function DashboardCalendar({
           <thead>
             <tr>
               {weekDays.map((d, i) => (
-                <th key={i} className="text-center text-[10px] text-slate-400 py-1 font-medium">
+                <th key={i} className="text-center text-[10px] text-stone-400 py-1 font-medium">
                   {d}
                 </th>
               ))}

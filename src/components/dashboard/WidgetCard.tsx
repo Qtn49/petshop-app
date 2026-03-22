@@ -9,5 +9,11 @@ export default function WidgetCard({
   children: ReactNode;
   className?: string;
 }) {
-  return <div className={className}>{children}</div>;
+  return (
+    <div
+      className={`rounded-2xl bg-white border border-amber-100/70 shadow-warm overflow-hidden ${className}`}
+    >
+      {children}
+    </div>
+  );
 }

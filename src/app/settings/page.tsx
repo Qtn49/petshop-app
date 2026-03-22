@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { Link2, Loader2, Check, Plus, Trash2, Info, UserPlus } from 'lucide-react';
+import InlineLoader from '@/components/ui/InlineLoader';
+import { Link2, Check, Plus, Trash2, Info, UserPlus } from 'lucide-react';
 import { getPsychologicalPricingEnabled, setPsychologicalPricingEnabled } from '@/lib/pricing/psychologicalPricing';
 import { clearOrganizationConnection } from '@/lib/organization-connection';
 import { setReturnPathAfterSquareConnect, getAndClearReturnPathAfterSquare, setReturnPathAfterOrgReconnect } from '@/lib/sessionReturnPath';
@@ -469,7 +470,7 @@ export default function SettingsPage() {
           <Card title="Company">
             {organizationLoading ? (
               <div className="flex items-center gap-2 text-slate-500">
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <InlineLoader size={24} />
                 <span>Loading…</span>
               </div>
             ) : (
@@ -525,7 +526,7 @@ export default function SettingsPage() {
                   </select>
                 </div>
                 <Button type="submit" disabled={organizationSaving}>
-                  {organizationSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                  {organizationSaving ? <InlineLoader size={24} /> : null}
                   Save company
                 </Button>
               </form>
@@ -536,7 +537,7 @@ export default function SettingsPage() {
             <p className="text-sm text-slate-600 mb-4">Create, edit, or remove user accounts. At least one admin must exist.</p>
             {usersLoading ? (
               <div className="flex items-center gap-2 text-slate-500">
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <InlineLoader size={24} />
                 <span>Loading…</span>
               </div>
             ) : (
@@ -567,7 +568,7 @@ export default function SettingsPage() {
                     <option value="admin">Admin</option>
                   </select>
                   <Button type="submit" size="sm" disabled={userSaving || !newUserName.trim() || newUserPin.length < 4}>
-                    {userSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                    {userSaving ? <InlineLoader size={24} /> : <UserPlus className="w-4 h-4" />}
                     <span className="ml-1">Add user</span>
                   </Button>
                 </form>
@@ -737,7 +738,7 @@ export default function SettingsPage() {
           </p>
           {invoiceFormulasLoading ? (
             <div className="flex items-center gap-2 text-slate-500">
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <InlineLoader size={24} />
               <span>Loading…</span>
             </div>
           ) : (
@@ -794,7 +795,7 @@ export default function SettingsPage() {
                 <Button type="button" onClick={saveInvoiceFormulas} disabled={invoiceFormulasSaving}>
                   {invoiceFormulasSaving ? (
                     <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <InlineLoader size={24} />
                       Saving…
                     </>
                   ) : (
@@ -810,7 +811,7 @@ export default function SettingsPage() {
       <Card title="Square Integration">
         {squareLoading ? (
           <div className="flex items-center gap-2 text-slate-500">
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <InlineLoader size={24} />
             <span>Loading…</span>
           </div>
         ) : squareStatus?.connected ? (
@@ -830,10 +831,10 @@ export default function SettingsPage() {
               disabled={squareDisconnecting}
             >
               {squareDisconnecting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <span className="inline-flex items-center gap-2">
+                  <InlineLoader size={24} />
                   Disconnecting…
-                </>
+                </span>
               ) : (
                 'Disconnect'
               )}

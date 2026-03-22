@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Loader2 } from 'lucide-react';
+import InlineLoader from '@/components/ui/InlineLoader';
 
 type Props = {
   value: string;
@@ -90,7 +90,7 @@ export default function CategoryCombobox({
         >
           {loading ? (
             <li className="px-3 py-3 text-sm text-slate-500 flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden />
+              <InlineLoader size={20} />
               Loading categories…
             </li>
           ) : filtered.length === 0 ? (

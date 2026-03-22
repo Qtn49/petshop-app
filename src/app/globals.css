@@ -3,13 +3,22 @@
 @tailwind utilities;
 
 :root {
-  --foreground: #0f172a;
-  --background: #f8fafc;
+  --foreground: #292524;
+  --background: #fffcf5;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
+}
+
+@layer components {
+  .page-title {
+    @apply text-2xl font-semibold text-stone-800 relative inline-block pb-2;
+  }
+  .page-title-accent {
+    @apply absolute bottom-0 left-0 h-0.5 w-12 rounded-full bg-amber-400/70;
+  }
 }
 
 @layer utilities {

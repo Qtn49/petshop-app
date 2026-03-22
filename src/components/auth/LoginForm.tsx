@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { Loader2, User } from 'lucide-react';
+import InlineLoader from '@/components/ui/InlineLoader';
+import { User } from 'lucide-react';
 
 type UserItem = { id: string; name: string | null; role: string; organization_name?: string };
 
@@ -46,11 +47,7 @@ export default function LoginForm() {
   };
 
   if (usersLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
-        <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
-      </div>
-    );
+    return <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100" />;
   }
 
   if (users.length === 0) {
@@ -124,7 +121,7 @@ export default function LoginForm() {
                 disabled={pin.length < 4 || submitting}
                 className="w-full mt-4 py-3 px-4 bg-primary-600 hover:bg-primary-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-medium rounded-xl transition"
               >
-                {submitting ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Sign In'}
+                {submitting ? <InlineLoader size={32} /> : 'Sign In'}
               </button>
             </form>
           )}

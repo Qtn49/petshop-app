@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase-server';
-import { storeInvoiceLearning } from '@/lib/invoice-learning/storeLearning';
 
 async function getInvoiceWithAccess(
   supabase: Awaited<ReturnType<typeof import('@/lib/supabase-server').getSupabaseClient>>,
@@ -60,16 +59,6 @@ export async function GET(
     .select('*')
     .eq('invoice_id', id);
 
-  let supplierAccuracy: number | null = null;
-  if (invoice.raw_text) {
-    const { getSupplierAccuracy } = await import('@/lib/invoice-learning/supplierAccuracy');
-    const { data: userRow } = await supabase.from('users').select('organization_id').eq('id', userId).single();
-    const orgId = (userRow as { organization_id?: string } | null)?.organization_id ?? null;
-    if (orgId) {
-      supplierAccuracy = await getSupplierAccuracy(supabase, orgId, invoice.raw_text);
-    }
-  }
-
   return NextResponse.json({
     invoice,
     items: (items || []).map((i) => ({
@@ -82,7 +71,6 @@ export async function GET(
       in_purchase_order: Boolean((i as { in_purchase_order?: boolean }).in_purchase_order),
       matched_from_supplier_history: Boolean((i as { matched_from_supplier_history?: boolean }).matched_from_supplier_history),
     })),
-    supplier_accuracy: supplierAccuracy,
   });
 }
 
@@ -99,20 +87,10 @@ export async function PATCH(
     return NextResponse.json({ error: 'userId required' }, { status: 400 });
   }
 
-  const { data: userRow } = await supabase
-    .from('users')
-    .select('organization_id')
-    .eq('id', userId)
-    .single();
-
-  const organizationId = (userRow as { organization_id?: string } | null)?.organization_id ?? null;
-
   const { invoice, error } = await getInvoiceWithAccess(supabase, id, userId);
   if (!invoice) {
     return NextResponse.json({ error: error || 'Invoice not found' }, { status: 404 });
   }
-
-  const invoiceWithFields = invoice as { id: string; raw_text?: string; ai_prediction_json?: unknown };
 
   let body: {
     items?: Array<{ skn?: string; product_name: string; quantity: number; price?: number; calculated_price?: number | null }>;
@@ -143,24 +121,7 @@ export async function PATCH(
     });
   }
 
-  let learningSaved = false;
-  if (organizationId && invoiceWithFields.raw_text && invoiceWithFields.ai_prediction_json) {
-    const result = await storeInvoiceLearning(supabase, {
-      organizationId,
-      invoiceId: id,
-      rawText: invoiceWithFields.raw_text,
-      aiPredictionJson: invoiceWithFields.ai_prediction_json,
-      userCorrectedItems: items.map((i) => ({
-        skn: (i.skn ?? '').trim() || undefined,
-        product_name: i.product_name ?? '',
-        quantity: Number(i.quantity) || 1,
-        price: i.price != null ? Number(i.price) : undefined,
-      })),
-    });
-    learningSaved = result.learningSaved;
-  }
-
-  return NextResponse.json({ success: true, learningSaved });
+  return NextResponse.json({ success: true });
 }
 
 export async function DELETE(

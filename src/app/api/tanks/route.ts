@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase-server';
+import { slugFromName } from '@/lib/slug';
 
 export async function GET(request: Request) {
   const supabase = getSupabaseClient();
@@ -34,11 +35,25 @@ export async function POST(request: Request) {
     );
   }
 
+  const baseSlug = slugFromName(name);
+  let slug = baseSlug;
+  let attempt = 1;
+  while (true) {
+    const { data: existing } = await supabase
+      .from('tanks')
+      .select('id')
+      .eq('slug', slug)
+      .maybeSingle();
+    if (!existing) break;
+    slug = `${baseSlug}-${(attempt++).toString(36)}`;
+  }
+
   const { data, error } = await supabase
     .from('tanks')
     .insert({
       user_id: userId,
       name,
+      slug,
       fish_species: fish_species || null,
       fish_count: fish_count ?? 0,
       notes: notes || null,

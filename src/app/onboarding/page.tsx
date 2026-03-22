@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { Loader2, ArrowRight, ArrowLeft } from 'lucide-react';
+import InlineLoader from '@/components/ui/InlineLoader';
+import { ArrowRight, ArrowLeft } from 'lucide-react';
 import { setOrganizationConnected, getOrganizationConnected } from '@/lib/organization-connection';
 import Link from 'next/link';
 
@@ -231,7 +232,7 @@ export default function OnboardingPage() {
                 </select>
               </div>
               <Button type="submit" disabled={loading} className="w-full">
-                {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : <>Continue <ArrowRight className="w-4 h-4 inline ml-1" /></>}
+                {loading ? <InlineLoader size={28} /> : <>Continue <ArrowRight className="w-4 h-4 inline ml-1" /></>}
               </Button>
             </form>
           </Card>
@@ -286,7 +287,7 @@ export default function OnboardingPage() {
                 />
               </div>
               <Button type="submit" disabled={loading || adminPin.length < 4 || adminPin !== adminPinConfirm} className="w-full">
-                {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : <>Continue <ArrowRight className="w-4 h-4 inline ml-1" /></>}
+                {loading ? <InlineLoader size={28} /> : <>Continue <ArrowRight className="w-4 h-4 inline ml-1" /></>}
               </Button>
             </form>
           </Card>
@@ -338,7 +339,7 @@ export default function OnboardingPage() {
 
               <form onSubmit={handleStep3} className="flex gap-2">
                 <Button type="submit" disabled={loading} className="flex-1">
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Finish setup'}
+                  {loading ? <InlineLoader size={28} /> : 'Finish setup'}
                 </Button>
                 <Button type="button" variant="secondary" onClick={skipStep3}>
                   Skip

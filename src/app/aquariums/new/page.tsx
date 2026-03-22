@@ -35,7 +35,7 @@ export default function NewTankPage() {
 
       const data = await res.json();
       if (res.ok) {
-        router.push(`/aquariums/${data.id}`);
+        router.push(`/aquariums/${data.slug || data.id}`);
       }
     } catch {
       // Fallback: redirect with mock

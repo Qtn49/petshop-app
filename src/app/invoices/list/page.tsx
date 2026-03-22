@@ -6,7 +6,8 @@ import Link from 'next/link';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import { ListSkeleton } from '@/components/ui/Skeleton';
-import { FileText, Trash2, Loader2 } from 'lucide-react';
+import InlineLoader from '@/components/ui/InlineLoader';
+import { FileText, Trash2 } from 'lucide-react';
 import { useInvoices } from '@/hooks/use-invoices';
 
 export default function InvoicesListPage() {
@@ -79,7 +80,7 @@ export default function InvoicesListPage() {
                   title="Remove invoice"
                 >
                   {deletingId === inv.id ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <InlineLoader size={24} />
                   ) : (
                     <Trash2 className="w-4 h-4" />
                   )}

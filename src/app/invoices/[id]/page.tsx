@@ -5,7 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { Loader2, Check, AlertCircle, Pencil, Sparkles, ArrowRight, Link2 } from 'lucide-react';
+import InlineLoader from '@/components/ui/InlineLoader';
+import { AlertCircle, Pencil, ArrowRight, Link2 } from 'lucide-react';
 import { formulaPercentToMultiplier } from '@/lib/invoice/formula';
 import { applyPsychologicalPricing, getPsychologicalPricingEnabled } from '@/lib/pricing/psychologicalPricing';
 import { getConfirmItemsKey } from '@/lib/invoice-import/steps';
@@ -120,8 +121,6 @@ export default function InvoiceDetailPage() {
   const [editCursorPosition, setEditCursorPosition] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [formulaOptions, setFormulaOptions] = useState<FormulaOption[]>(DEFAULT_FORMULAS);
-  const [supplierAccuracy, setSupplierAccuracy] = useState<number | null>(null);
-  const [learningSavedMessage, setLearningSavedMessage] = useState(false);
   const [squareConnected, setSquareConnected] = useState(false);
   const [reenabling, setReenabling] = useState(false);
   const editInputRef = useRef<HTMLInputElement | null>(null);
@@ -416,7 +415,6 @@ export default function InvoiceDetailPage() {
         if (!invRes.ok) throw new Error(data.error || 'Failed to load');
 
         setInvoice(data.invoice);
-        setSupplierAccuracy(data.supplier_accuracy ?? null);
 
         const initialItems = applyMatching(data.items || [], catalog, options);
         setItems(initialItems);
@@ -533,20 +531,10 @@ export default function InvoiceDetailPage() {
         setError(data.error || 'Failed to save items');
         return;
       }
-      const resData = await res.json().catch(() => ({}));
-      if (resData.learningSaved) {
-        setLearningSavedMessage(true);
-      }
-
       const payload: ConfirmItem[] = selectedItems.map(toConfirmItem);
       sessionStorage.setItem(getConfirmItemsKey(id), JSON.stringify(payload));
 
-      const navigate = () => router.push(`/invoices/${id}/confirm`);
-      if (resData.learningSaved) {
-        setTimeout(navigate, 1500);
-      } else {
-        navigate();
-      }
+      router.push(`/invoices/${id}/confirm`);
     } catch {
       setError('Failed to save items');
     } finally {
@@ -597,7 +585,7 @@ export default function InvoiceDetailPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+        <InlineLoader label="Loading invoice..." />
       </div>
     );
   }
@@ -620,21 +608,16 @@ export default function InvoiceDetailPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Invoice: {invoice.file_name}</h1>
           <p className="text-slate-500 mt-1">Review items, check Square matches, and continue to create purchase order</p>
-          {supplierAccuracy != null && (
-            <p className="flex items-center gap-1.5 mt-2 text-sm text-emerald-600 font-medium">
-              <Sparkles className="w-4 h-4" />
-              AI accuracy for this supplier: {supplierAccuracy}%
-            </p>
-          )}
-          {learningSavedMessage && (
-            <p className="flex items-center gap-1.5 mt-2 text-sm text-emerald-600 font-medium animate-pulse">
-              <Check className="w-4 h-4" />
-              Learning saved for this supplier
-            </p>
-          )}
         </div>
         <Button variant="secondary" onClick={handleParseAgain} disabled={parsing}>
-          {parsing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Parsing…</> : 'Parse again'}
+          {parsing ? (
+            <span className="inline-flex items-center gap-2">
+              <InlineLoader size={28} />
+              Parsing…
+            </span>
+          ) : (
+            'Parse again'
+          )}
         </Button>
       </header>
 
@@ -662,8 +645,7 @@ export default function InvoiceDetailPage() {
       {parsing ? (
         <Card>
           <div className="flex items-center gap-3 py-4">
-            <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
-            <span>Parsing invoice (deterministic) + AI verification...</span>
+            <InlineLoader label="Parsing invoice..." />
           </div>
         </Card>
       ) : (
@@ -687,7 +669,7 @@ export default function InvoiceDetailPage() {
                   disabled={reenabling}
                   className="text-amber-700 border-amber-300 hover:bg-amber-50"
                 >
-                  {reenabling ? <Loader2 className="w-4 h-4 animate-spin inline mr-1" /> : null}
+                  {reenabling ? <InlineLoader size={24} /> : null}
                   Re-enable items for purchase order
                 </Button>
               )}
@@ -993,7 +975,10 @@ export default function InvoiceDetailPage() {
             </Button>
             <Button onClick={handleConfirm} disabled={selectedCount === 0 || saving}>
               {saving ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...</>
+                <span className="inline-flex items-center gap-2">
+                  <InlineLoader size={28} />
+                  Saving...
+                </span>
               ) : (
                 <><ArrowRight className="w-4 h-4 mr-2" /> Continue to confirmation ({selectedCount})</>
               )}

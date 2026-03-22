@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
+import InlineLoader from '@/components/ui/InlineLoader';
 import { setOrganizationConnected } from '@/lib/organization-connection';
 
 const SESSION_STORAGE_KEY = 'petshop_session';
@@ -108,7 +108,7 @@ export default function ConnectPage() {
             disabled={loading}
             className="w-full py-3 px-4 bg-primary-600 hover:bg-primary-700 disabled:bg-slate-300 text-white font-medium rounded-xl transition"
           >
-            {loading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Connect'}
+            {loading ? <InlineLoader size={32} /> : 'Connect'}
           </button>
         </form>
 

@@ -1,9 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase-server';
-import { parseInvoiceText } from '@/lib/invoice/parseInvoice';
-import { verifyParsedItemsWithAI } from '@/lib/invoice/verifyWithAI';
-import { detectSupplierFromText } from '@/lib/invoice-learning/supplierDetection';
-import { preMatchBarcodes } from '@/lib/invoice-learning/preMatch';
+import { parseInvoiceWithClaude } from '@/lib/invoice/parseWithClaude';
 
 async function extractTextFromFile(
   supabase: Awaited<ReturnType<typeof getSupabaseClient>>,
@@ -54,14 +51,6 @@ export async function POST(request: Request) {
     console.log('\n' + sep);
     console.log('📥 PARSE REQUEST — invoiceId:', invoiceId, 'userId:', userId);
     console.log(sep);
-
-    const { data: userRow } = await supabase
-      .from('users')
-      .select('organization_id')
-      .eq('id', userId)
-      .single();
-
-    const organizationId = (userRow as { organization_id?: string } | null)?.organization_id ?? null;
 
     const { data: invoice, error: invError } = await supabase
       .from('invoices')
@@ -122,74 +111,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const supplierName = detectSupplierFromText(rawText);
-    const preMatched =
-      organizationId && supplierName
-        ? await preMatchBarcodes(supabase, organizationId, supplierName, rawText)
-        : new Map<string, { name: string; square_variation_id: string | null; last_price: string | number | null }>();
-    const preMatchedBarcodes = new Set(preMatched.keys());
-    const context = preMatchedBarcodes.size > 0 ? { preMatchedBarcodes } : undefined;
+    const { items: finalItems } = await parseInvoiceWithClaude(rawText);
 
-    const { items } = await parseInvoiceText(rawText, context);
-    // Apply learned overrides without removing any items.
-    // If we recognize a barcode for this supplier, we trust the learned name
-    // and last_price for that barcode.
-    const finalItems = items.map((it) => {
-      const code = it.code ?? null;
-      if (!code) return it;
-      const known = preMatched.get(code);
-      if (!known) return it;
-      const overrideName = known.name ?? it.name;
-      const overridePriceRaw = known.last_price;
-      const overridePrice =
-        overridePriceRaw != null && !Number.isNaN(Number(overridePriceRaw))
-          ? Number(overridePriceRaw)
-          : null;
-      return {
-        ...it,
-        name: overrideName,
-        price: overridePrice != null && overridePrice > 0 ? overridePrice : it.price,
-      };
-    });
-
-    if (finalItems.length > 0) {
-      console.log('📋 Parsed items (post-learn overrides):', JSON.stringify(finalItems, null, 2));
-      console.log(sep + '\n');
-
-      const verification = await verifyParsedItemsWithAI(rawText, finalItems);
-      if (verification) {
-        if (verification.valid) {
-          console.log('✅ AI verification: passed');
-        } else {
-          console.log('⚠️ AI verification: issues found', verification.issues);
-          if (verification.missingItems?.length) {
-            console.log('   Missing items:', verification.missingItems);
-          }
-        }
-
-        // Apply suggestedCorrections non-destructively.
-        // Never remove items: only update fields on existing indices.
-        if (verification.suggestedCorrections?.length) {
-          for (const corr of verification.suggestedCorrections) {
-            const idx = corr.index;
-            const item = finalItems[idx];
-            if (!item) continue;
-            if (corr.field === 'name') {
-              (finalItems[idx] as typeof item).name = corr.suggested;
-            } else if (corr.field === 'price') {
-              const p = parseFloat(String(corr.suggested).replace(/[^0-9.\-]/g, ''));
-              if (!Number.isNaN(p) && p > 0) (finalItems[idx] as typeof item).price = p;
-            } else if (corr.field === 'quantity') {
-              const q = parseInt(String(corr.suggested).replace(/[^0-9\-]/g, ''), 10);
-              if (!Number.isNaN(q) && q > 0) (finalItems[idx] as typeof item).quantity = q;
-            }
-          }
-        }
-
-        console.log(sep + '\n');
-      }
-    } else {
-      console.log('⚠️ No items parsed (deterministic parser returned empty).');
+    if (finalItems.length === 0) {
+      console.log('⚠️ No items parsed (Claude returned empty).');
       console.log(sep + '\n');
     }
 
@@ -197,12 +122,21 @@ export async function POST(request: Request) {
       finalItems.map((i) => ({ code: i.code, name: i.name, quantity: i.quantity, price: i.price }))
     );
 
-    const poVendorName = supplierName ?? null;
     const firstLines = rawText.split(/\r?\n/).slice(0, 40).join('\n');
     const shipToMatch = firstLines.match(/(?:ship\s+to|deliver\s+to|bill\s+to|sold\s+to)\s*:?\s*([^\n]+)/im);
     const poShipTo = shipToMatch?.[1]?.trim().replace(/\s+/g, ' ').slice(0, 500) ?? null;
     const dateMatch = firstLines.match(/(?:date|expected|due)\s*:?\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})/im);
     const poExpectedOn = dateMatch?.[1] ?? null;
+
+    const idx = firstLines.toLowerCase().search(/(?:tax\s+invoice|invoice\s+(?:no|#|number)|a\.?b\.?n\.?|date\s*:)/i);
+    let poVendorName: string | null = null;
+    if (idx > 0) {
+      const before = firstLines.slice(0, idx).trim();
+      const lastLine = before.split('\n').pop()?.trim();
+      if (lastLine && lastLine.length >= 3 && lastLine.length <= 120 && !/^\d+$/.test(lastLine)) {
+        poVendorName = lastLine.replace(/\s+/g, ' ');
+      }
+    }
 
     for (const item of finalItems) {
       await supabase.from('invoice_items').insert({
@@ -212,7 +146,7 @@ export async function POST(request: Request) {
         quantity: item.quantity,
         price: item.price,
         status: 'pending',
-        matched_from_supplier_history: item.matchedFromHistory ?? false,
+        matched_from_supplier_history: false,
       });
     }
 
@@ -234,7 +168,7 @@ export async function POST(request: Request) {
         product_name: i.name,
         quantity: i.quantity,
         price: i.price,
-        matched_from_supplier_history: i.matchedFromHistory ?? false,
+        matched_from_supplier_history: false,
       })),
     });
   } catch (err) {

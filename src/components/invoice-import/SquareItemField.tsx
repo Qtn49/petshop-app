@@ -5,7 +5,8 @@ import MissingFieldHighlight from './MissingFieldHighlight';
 import ImageUploader from './ImageUploader';
 import CategoryCombobox from './CategoryCombobox';
 import VendorAutocomplete from './VendorAutocomplete';
-import { X, Loader2 } from 'lucide-react';
+import InlineLoader from '@/components/ui/InlineLoader';
+import { X } from 'lucide-react';
 import type { ConfirmItem } from '@/lib/invoice-import/confirm-types';
 
 /** In-memory cache for SKU → vendor to avoid repeated API calls in the same session. */
@@ -249,7 +250,7 @@ export default function SquareItemField({
           />
           {vendorLookupLoading && (
             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden>
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <InlineLoader size={24} />
             </span>
           )}
         </div>

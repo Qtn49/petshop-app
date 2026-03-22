@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import './globals.css';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { CalculatorProvider } from '@/contexts/CalculatorContext';
 import { SidebarProvider } from '@/contexts/SidebarContext';
 import QueryProvider from '@/lib/query-provider';
 import SessionReturnTracker from '@/components/SessionReturnTracker';
+import PageLoader from '@/components/ui/PageLoader';
 
 export const metadata: Metadata = {
   title: 'Pet Shop Manager',
@@ -19,7 +21,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased font-sans">
-        <QueryProvider>
+        <PageLoader />
+        <Suspense fallback={null}>
+          <QueryProvider>
           <AuthProvider>
             <SidebarProvider>
               <CalculatorProvider>
@@ -29,6 +33,7 @@ export default function RootLayout({
             </SidebarProvider>
           </AuthProvider>
         </QueryProvider>
+        </Suspense>
       </body>
     </html>
   );

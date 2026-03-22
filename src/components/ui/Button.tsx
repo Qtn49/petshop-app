@@ -12,11 +12,12 @@ export default function Button({
   className = '',
   ...props
 }: ButtonProps) {
-  const base = 'font-medium rounded-lg transition inline-flex items-center justify-center';
+  const base =
+    'font-medium rounded-xl transition inline-flex items-center justify-center';
   const variants = {
-    primary: 'bg-primary-600 hover:bg-primary-700 text-white',
-    secondary: 'bg-slate-200 hover:bg-slate-300 text-slate-800',
-    ghost: 'hover:bg-slate-100 text-slate-700',
+    primary: 'bg-primary-600 hover:bg-primary-700 text-white shadow-sm shadow-amber-900/10',
+    secondary: 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/80',
+    ghost: 'hover:bg-amber-50/80 text-stone-700',
     danger: 'bg-red-600 hover:bg-red-700 text-white',
   };
   const sizes = {

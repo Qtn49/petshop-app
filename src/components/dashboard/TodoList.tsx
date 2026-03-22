@@ -86,12 +86,12 @@ function TodoListInner(props: Props) {
   const completedCount = tasks.filter((t) => t.completed).length;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col h-full min-h-0">
-      <div className="p-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
-        <h2 className="font-semibold text-slate-800">To-Do List</h2>
+    <div className="overflow-hidden flex flex-col h-full min-h-0">
+      <div className="p-4 border-b border-amber-50/90 flex items-center justify-between flex-shrink-0">
+        <h2 className="font-semibold text-stone-800">To-Do List</h2>
         <button
           onClick={() => setShowCompleted((v) => !v)}
-          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition"
+          className="flex items-center gap-1.5 text-xs text-stone-500 hover:text-stone-700 transition"
           title={showCompleted ? 'Hide completed' : 'Show completed'}
         >
           {showCompleted ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -105,13 +105,13 @@ function TodoListInner(props: Props) {
               <button
                 onClick={() => toggleTask(task.id)}
                 className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                  task.completed ? 'bg-primary-600 border-primary-600 text-white' : 'border-slate-300'
+                  task.completed ? 'bg-primary-600 border-primary-600 text-white' : 'border-stone-300'
                 }`}
               >
                 {task.completed && <Check className="w-3 h-3" />}
               </button>
               <div className="flex-1 min-w-0">
-                <span className={`block ${task.completed ? 'line-through text-slate-500' : 'text-slate-800'}`}>
+                <span className={`block ${task.completed ? 'line-through text-stone-500' : 'text-stone-800'}`}>
                   {task.title}
                 </span>
                 {task.due_date && (
@@ -131,7 +131,7 @@ function TodoListInner(props: Props) {
             </li>
           ))}
           {visibleTasks.length === 0 && (
-            <p className="text-slate-500 text-sm py-4 text-center">
+            <p className="text-stone-500 text-sm py-4 text-center">
               {tasks.length > 0 ? 'All tasks completed!' : 'No tasks yet'}
             </p>
           )}
@@ -143,7 +143,7 @@ function TodoListInner(props: Props) {
             onChange={(e) => setNewTask(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && addTask()}
             placeholder="Add a task..."
-            className="flex-1 px-3 py-2 rounded-lg border border-slate-200 focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none"
+            className="flex-1 px-3 py-2 rounded-xl border border-amber-100 focus:border-primary-500 focus:ring-1 focus:ring-amber-200 outline-none"
           />
           <div className="relative">
             <input
@@ -151,7 +151,7 @@ function TodoListInner(props: Props) {
               value={newDueDate}
               onChange={(e) => setNewDueDate(e.target.value)}
               className={`px-3 py-2 rounded-lg border focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none text-sm w-36 ${
-                newDueDate ? 'border-primary-300 text-slate-700' : 'border-slate-200 text-slate-400'
+                newDueDate ? 'border-primary-300 text-stone-700' : 'border-amber-100 text-stone-400'
               }`}
               title="Due date (optional) — adds task to calendar"
             />
@@ -168,7 +168,7 @@ function TodoListInner(props: Props) {
           </div>
           <button
             onClick={addTask}
-            className="p-2 rounded-lg bg-primary-600 text-white hover:bg-primary-700"
+            className="p-2 rounded-xl bg-primary-600 text-white hover:bg-primary-700 shadow-sm"
           >
             <Plus className="w-5 h-5" />
           </button>
