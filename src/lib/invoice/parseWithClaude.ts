@@ -316,8 +316,7 @@ export async function parseInvoiceWithClaude(rawText: string): Promise<{ items: 
 
     // Normalize items — map rich fields to ParsedItem
     items = items.map((it) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const raw = it as any;
+      const raw = it as any; // eslint-disable-line
       const quantityDelivered = typeof raw.quantityDelivered === 'number' ? raw.quantityDelivered : null;
       const quantityOrdered = typeof raw.quantityOrdered === 'number' ? raw.quantityOrdered : null;
       const quantity = quantityDelivered ?? quantityOrdered ?? (typeof raw.quantity === 'number' ? raw.quantity : 1);
