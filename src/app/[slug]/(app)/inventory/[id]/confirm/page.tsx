@@ -4,10 +4,11 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTenantHref } from '@/hooks/useTenantHref';
+import { useSidebar } from '@/contexts/SidebarContext';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import InlineLoader from '@/components/ui/InlineLoader';
-import { AlertCircle, ArrowLeft } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Sparkles, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { getConfirmItemsKey } from '@/lib/invoice-import/steps';
 import type { ConfirmItem, RequiredField } from '@/lib/invoice-import/confirm-types';
 import { getMissingFields } from '@/lib/invoice-import/confirm-types';
@@ -19,6 +20,13 @@ type AiSuggestion = {
   suggested_price: number;
   confidence: 'high' | 'medium' | 'low';
   source: string;
+  reasoning?: string;
+};
+
+type PerItemSuggestion = {
+  suggested_price: number;
+  reasoning: string;
+  confidence: 'high' | 'medium' | 'low';
 };
 
 export default function InvoiceConfirmPage() {
@@ -26,6 +34,7 @@ export default function InvoiceConfirmPage() {
   const router = useRouter();
   const tenantHref = useTenantHref();
   const { user } = useAuth();
+  const { isCollapsed } = useSidebar();
   const invoiceId = params.id as string;
   const [items, setItems] = useState<ConfirmItem[]>([]);
   const [squareCategories, setSquareCategories] = useState<string[]>([]);
@@ -48,6 +57,10 @@ export default function InvoiceConfirmPage() {
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [priceChoices, setPriceChoices] = useState<Record<number, 'ai' | 'formula'>>({});
   const formulaPricesRef = useRef<Record<number, number | null>>({});
+  // Per-item price suggestion (individual button)
+  const [perItemSuggestions, setPerItemSuggestions] = useState<Record<number, PerItemSuggestion>>({});
+  const [perItemSuggestingIdx, setPerItemSuggestingIdx] = useState<number | null>(null);
+  const [perItemPopoverIdx, setPerItemPopoverIdx] = useState<number | null>(null);
 
   useEffect(() => {
     if (!invoiceId) {
@@ -57,12 +70,12 @@ export default function InvoiceConfirmPage() {
     try {
       const raw = sessionStorage.getItem(getConfirmItemsKey(invoiceId));
       if (!raw) {
-        router.replace(tenantHref(`/invoices/${invoiceId}/square`));
+        router.replace(tenantHref(`/inventory/${invoiceId}`));
         return;
       }
       const parsed = JSON.parse(raw) as ConfirmItem[];
       if (!Array.isArray(parsed) || parsed.length === 0) {
-        router.replace(tenantHref(`/invoices/${invoiceId}/square`));
+        router.replace(tenantHref(`/inventory/${invoiceId}`));
         return;
       }
       const mapped = parsed.map((i) => ({ ...i, includedInPO: i.includedInPO !== false, images: i.images ?? [] }));
@@ -72,7 +85,7 @@ export default function InvoiceConfirmPage() {
       mapped.forEach((item, idx) => { fp[idx] = item.retail_price; });
       formulaPricesRef.current = fp;
     } catch {
-      router.replace(tenantHref(`/invoices/${invoiceId}/square`));
+      router.replace(tenantHref(`/inventory/${invoiceId}`));
     } finally {
       setLoading(false);
     }
@@ -276,6 +289,40 @@ export default function InvoiceConfirmPage() {
     });
   }, [items, getSuggestionForItem, updateItem]);
 
+  const handleSuggestPerItem = useCallback(async (idx: number) => {
+    const item = items[idx];
+    if (!item || !user?.id) return;
+    // Use cache if available
+    if (perItemSuggestions[idx]) {
+      setPerItemPopoverIdx((prev) => (prev === idx ? null : idx));
+      return;
+    }
+    setPerItemSuggestingIdx(idx);
+    try {
+      const res = await fetch('/api/invoices/suggest-price-single', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, product_name: item.product_name, purchase_price: item.purchase_price }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.suggested_price != null) {
+          const suggestion: PerItemSuggestion = {
+            suggested_price: data.suggested_price,
+            reasoning: data.reasoning ?? '',
+            confidence: data.confidence ?? 'medium',
+          };
+          setPerItemSuggestions((prev) => ({ ...prev, [idx]: suggestion }));
+          setPerItemPopoverIdx(idx);
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setPerItemSuggestingIdx(null);
+    }
+  }, [items, user?.id, perItemSuggestions]);
+
   const includedItems = items.filter((i) => i.includedInPO !== false);
 
   const getAllMissing = useCallback((): { index: number; fields: RequiredField[] }[] => {
@@ -349,7 +396,7 @@ export default function InvoiceConfirmPage() {
       }
 
       sessionStorage.removeItem(getConfirmItemsKey(invoiceId));
-      router.push(`${tenantHref(`/invoices/${invoiceId}`)}?po_created=1`);
+      router.push(`${tenantHref(`/inventory/${invoiceId}`)}?po_created=1`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create purchase order');
     } finally {
@@ -358,7 +405,7 @@ export default function InvoiceConfirmPage() {
   };
 
   const handleBack = () => {
-    router.push(tenantHref(`/invoices/${invoiceId}/square`));
+    router.push(tenantHref(`/inventory/${invoiceId}`));
   };
 
   if (loading) {
@@ -373,8 +420,10 @@ export default function InvoiceConfirmPage() {
     return null;
   }
 
+  const configuredCount = includedItems.filter((item) => getMissingFields(item).length === 0).length;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-40 lg:pb-24">
       <header>
         <h1 className="text-2xl font-bold text-slate-800">Confirm products & create purchase order</h1>
         <p className="text-slate-500 mt-1">Review and complete product details. New items are created in Square; a CSV is downloaded for all items.</p>
@@ -387,114 +436,163 @@ export default function InvoiceConfirmPage() {
         </div>
       )}
 
-      {/* AI price suggestions banner */}
-      {newProducts.length > 0 && (
+      {/* Progress indicator */}
+      <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-200 text-sm">
+        <span className="font-medium text-slate-700">{configuredCount} / {includedItems.length} items configured</span>
+        <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-primary-500 rounded-full transition-all"
+            style={{ width: includedItems.length > 0 ? `${(configuredCount / includedItems.length) * 100}%` : '0%' }}
+          />
+        </div>
+        {configuredCount === includedItems.length && includedItems.length > 0 && (
+          <span className="text-green-600 font-medium flex items-center gap-1"><CheckCircle2 className="w-4 h-4" /> Ready</span>
+        )}
+      </div>
+
+      {/* AI price suggestions banner (batch) */}
+      {newProducts.length > 0 && aiEnabled && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm font-medium text-amber-900">
-              🤖 {newProducts.length} new item{newProducts.length > 1 ? 's' : ''} — not yet in your Square catalog
+              {newProducts.length} new item{newProducts.length > 1 ? 's' : ''} — not yet in your Square catalog
             </p>
             <div className="flex flex-wrap gap-2">
-              {aiEnabled && (
-                <button
-                  type="button"
-                  onClick={handleGetSuggestions}
-                  disabled={suggestionsLoading}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium transition disabled:opacity-60"
-                >
-                  {suggestionsLoading && <InlineLoader size={16} />}
-                  {suggestionsLoading ? 'Loading...' : 'Get AI price suggestions'}
-                </button>
-              )}
               <button
                 type="button"
-                onClick={handleUseDefaultMargin}
-                className="inline-flex items-center px-3 py-1.5 rounded-md bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-medium transition"
+                onClick={handleGetSuggestions}
+                disabled={suggestionsLoading}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium transition disabled:opacity-60"
               >
-                Use default margin
+                {suggestionsLoading && <InlineLoader size={16} />}
+                {suggestionsLoading ? 'Loading...' : 'Get AI suggestions for all'}
               </button>
+              {suggestions.length > 0 && (
+                <>
+                  <button type="button" onClick={() => applyAllPriceChoices('ai')} className="text-xs px-2 py-1 rounded bg-amber-500 text-white hover:bg-amber-600 transition">Apply all AI</button>
+                  <button type="button" onClick={() => applyAllPriceChoices('formula')} className="text-xs px-2 py-1 rounded bg-slate-200 text-slate-700 hover:bg-slate-300 transition">Apply all formula</button>
+                </>
+              )}
+              <button type="button" onClick={handleUseDefaultMargin} className="inline-flex items-center px-3 py-1.5 rounded-md bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-medium transition">Use default margin</button>
             </div>
           </div>
-          {suggestions.length > 0 && (
-            <div className="mt-3 flex gap-2">
-              <button
-                type="button"
-                onClick={() => applyAllPriceChoices('ai')}
-                className="text-xs px-2 py-1 rounded bg-amber-500 text-white hover:bg-amber-600 transition"
-              >
-                Apply all AI
-              </button>
-              <button
-                type="button"
-                onClick={() => applyAllPriceChoices('formula')}
-                className="text-xs px-2 py-1 rounded bg-slate-200 text-slate-700 hover:bg-slate-300 transition"
-              >
-                Apply all formula
-              </button>
-            </div>
-          )}
         </div>
       )}
 
-      <Card title="Items">
-        <p className="text-sm text-slate-600 mb-4">Click a row to expand and edit. Include the items you want in the purchase order.</p>
-        <div className="space-y-1">
-          {items.map((item, i) => {
-            const suggestion = item.status === 'unmatched' ? getSuggestionForItem(item) : undefined;
-            const choice = priceChoices[i] ?? 'formula';
-            const confidenceColor = suggestion?.confidence === 'high' ? 'bg-green-500' : suggestion?.confidence === 'medium' ? 'bg-amber-500' : 'bg-red-500';
-            return (
-            <div key={i} className="border border-slate-200 rounded-lg overflow-hidden bg-white">
+      {/* Card grid */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {items.map((item, i) => {
+          const suggestion = item.status === 'unmatched' ? getSuggestionForItem(item) : undefined;
+          const choice = priceChoices[i] ?? 'formula';
+          const confidenceColor = suggestion?.confidence === 'high' ? 'bg-green-500' : suggestion?.confidence === 'medium' ? 'bg-amber-500' : 'bg-red-500';
+          const perItemSug = perItemSuggestions[i];
+          const isExpanded = expandedIndex === i;
+          const isIncluded = item.includedInPO !== false;
+          const missing = showValidation ? getMissingFields(item) : [];
+          const statusBadge = item.status === 'matched'
+            ? <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Matched</span>
+            : <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">New</span>;
+
+          return (
+            <div
+              key={i}
+              ref={(el) => { itemRefs.current[i] = el; }}
+              className={`relative border rounded-xl bg-white shadow-sm transition-all ${isExpanded ? 'sm:col-span-2' : ''} ${!isIncluded ? 'opacity-60' : ''} ${missing.length > 0 ? 'border-red-300' : 'border-slate-200'}`}
+            >
+              {/* Card header */}
+              <div className="flex items-start gap-2 px-4 pt-3 pb-2">
+                <input
+                  type="checkbox"
+                  checked={isIncluded}
+                  onChange={(e) => { e.stopPropagation(); updateItem(i, { includedInPO: e.target.checked }); }}
+                  disabled={submitting}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500 shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-bold text-slate-800 text-sm leading-tight truncate">{item.product_name || 'Unnamed'}</span>
+                    {statusBadge}
+                  </div>
+                  {item.category?.trim() && (
+                    <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600">{item.category}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Suggestion badges (batch AI) */}
+              {suggestion && (
+                <div className="px-4 pb-2 flex items-center gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => applyPriceChoice(i, 'ai')}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition ${choice === 'ai' ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}
+                  >
+                    AI: ${suggestion.suggested_price.toFixed(2)}
+                    <span className={`w-2 h-2 rounded-full ${confidenceColor}`} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyPriceChoice(i, 'formula')}
+                    className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium transition ${choice === 'formula' ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}
+                  >
+                    Formula: ${(formulaPricesRef.current[i] ?? 0).toFixed(2)}
+                  </button>
+                </div>
+              )}
+
+              {/* Expand/collapse toggle */}
               <button
                 type="button"
                 onClick={() => setExpandedIndex((prev) => (prev === i ? null : i))}
-                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 transition"
+                className="w-full flex items-center justify-between px-4 py-2 text-xs text-slate-500 hover:bg-slate-50 border-t border-slate-100 transition"
               >
-                <input
-                  type="checkbox"
-                  checked={item.includedInPO !== false}
-                  onChange={(e) => {
-                    e.stopPropagation();
-                    updateItem(i, { includedInPO: e.target.checked });
-                  }}
-                  disabled={submitting}
-                  className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500 shrink-0"
-                  onClick={(e) => e.stopPropagation()}
-                />
-                <span className="flex-1 font-medium text-slate-800 truncate">{item.product_name || 'Unnamed'}</span>
-                {suggestion ? (
-                  <span className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      onClick={() => applyPriceChoice(i, 'ai')}
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition ${choice === 'ai' ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}
-                    >
-                      AI: ${suggestion.suggested_price.toFixed(2)}
-                      <span className={`w-2 h-2 rounded-full ${confidenceColor}`} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => applyPriceChoice(i, 'formula')}
-                      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium transition ${choice === 'formula' ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}
-                    >
-                      Formula: ${(formulaPricesRef.current[i] ?? 0).toFixed(2)}
-                    </button>
-                  </span>
-                ) : (
-                  item.category?.trim() && (
-                    <span className="text-xs text-slate-500 shrink-0 hidden sm:inline">
-                      {item.category.trim()}
-                    </span>
-                  )
-                )}
-                <span className="text-slate-400 shrink-0">{expandedIndex === i ? '▼' : '▶'}</span>
+                <span>{isExpanded ? 'Hide details' : 'Edit details'}</span>
+                <span>{isExpanded ? '▲' : '▼'}</span>
               </button>
-              {expandedIndex === i && (
-                <div ref={(el) => { itemRefs.current[i] = el; }} className="border-t border-slate-100 p-4 bg-slate-50/50">
+
+              {/* Expanded fields */}
+              {isExpanded && (
+                <div className="px-4 pb-4 pt-2 bg-slate-50/50 border-t border-slate-100 space-y-3">
+                  {/* Per-item price suggestion (for new items) */}
+                  {item.status === 'unmatched' && (
+                    <div className="relative">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-slate-600">Retail price</span>
+                        <button
+                          type="button"
+                          onClick={() => handleSuggestPerItem(i)}
+                          disabled={perItemSuggestingIdx === i || !aiEnabled}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 transition disabled:opacity-50"
+                          title={aiEnabled ? 'Suggest retail price with AI' : 'AI suggestions not enabled'}
+                        >
+                          {perItemSuggestingIdx === i ? <InlineLoader size={12} /> : <Sparkles className="w-3 h-3" />}
+                          Suggest price
+                        </button>
+                      </div>
+                      {perItemPopoverIdx === i && perItemSug && (
+                        <div className="mt-1 p-3 rounded-lg border border-purple-200 bg-purple-50 text-xs space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-purple-800">Suggested: ${perItemSug.suggested_price.toFixed(2)}</span>
+                            <span className={`px-1.5 py-0.5 rounded-full font-medium ${perItemSug.confidence === 'high' ? 'bg-green-100 text-green-700' : perItemSug.confidence === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                              {perItemSug.confidence}
+                            </span>
+                          </div>
+                          {perItemSug.reasoning && <p className="text-purple-700">{perItemSug.reasoning}</p>}
+                          <button
+                            type="button"
+                            onClick={() => { updateItem(i, { retail_price: perItemSug.suggested_price }); setPerItemPopoverIdx(null); }}
+                            className="w-full py-1 rounded bg-purple-600 text-white hover:bg-purple-700 font-medium transition"
+                          >
+                            Apply ${perItemSug.suggested_price.toFixed(2)}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <ProductCard
                     item={item}
                     index={i}
-                    missingFields={new Set(showValidation ? getMissingFields(item) : [])}
+                    missingFields={new Set(missing)}
                     onChange={updateItem}
                     squareCategories={squareCategories}
                     categoryLoading={categoriesLoading}
@@ -503,16 +601,23 @@ export default function InvoiceConfirmPage() {
                     squareItemFields={squareItemFields}
                     squareAutocomplete={squareAutocomplete}
                     userId={user?.id}
+                    vendorCodeInSquare={item.status === 'matched' ? true : item.vendor_code?.trim() ? false : undefined}
                   />
+                  {missing.length > 0 && (
+                    <div className="flex items-center gap-1.5 text-xs text-red-600">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      Missing: {missing.join(', ')}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           );
-          })}
-        </div>
-      </Card>
+        })}
+      </div>
 
-      <Card title="3️⃣ Purchase Order Summary">
+      {/* PO summary card */}
+      <Card title="Purchase Order Summary">
         <div className="mb-4">
           <label htmlFor="po-vendor-name" className="block text-sm font-medium text-slate-700 mb-1">
             Vendor name for this purchase order
@@ -534,33 +639,33 @@ export default function InvoiceConfirmPage() {
           totalCost={totalCost}
         />
         {includedItems.length < items.length && (
-          <p className="text-sm text-slate-600 mt-2">
-            {items.length - includedItems.length} item(s) not included in this purchase order.
-          </p>
+          <p className="text-sm text-slate-600 mt-2">{items.length - includedItems.length} item(s) not included in this purchase order.</p>
         )}
-        <p className="text-sm text-slate-500 mt-2">
-          A CSV file matching the purchase order template will be downloaded. Items with an existing SKU are not created in Square.
-        </p>
-        <div className="mt-6 flex flex-wrap gap-4">
+        <p className="text-sm text-slate-500 mt-2">A CSV file matching the purchase order template will be downloaded. Items with an existing SKU are not created in Square.</p>
+      </Card>
+
+      {/* Sticky bottom action bar */}
+      <div className={`fixed bottom-[72px] lg:bottom-0 right-0 z-30 bg-white border-t border-slate-200 shadow-lg px-4 py-3 flex flex-wrap items-center justify-between gap-3 left-0 ${isCollapsed ? 'lg:left-[72px]' : 'lg:left-64'}`}>
+        <div className="flex items-center gap-3 text-sm text-slate-600">
+          <span>{includedItems.length} item{includedItems.length !== 1 ? 's' : ''} · ${totalCost.toFixed(2)} cost</span>
+          {configuredCount < includedItems.length && (
+            <span className="text-amber-600 flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" />{includedItems.length - configuredCount} incomplete</span>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
           <Button variant="secondary" onClick={handleBack} disabled={submitting}>
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back
           </Button>
-          <Button
-            onClick={handleCreatePO}
-            disabled={submitting || includedItems.length === 0}
-          >
+          <Button onClick={handleCreatePO} disabled={submitting || includedItems.length === 0}>
             {submitting ? (
-              <span className="inline-flex items-center gap-2">
-                <InlineLoader size={24} />
-                Creating...
-              </span>
+              <span className="inline-flex items-center gap-2"><InlineLoader size={24} />Creating...</span>
             ) : (
-              'Create items and download purchase order'
+              'Create items & download PO'
             )}
           </Button>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

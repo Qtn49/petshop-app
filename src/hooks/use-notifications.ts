@@ -49,9 +49,21 @@ export function useNotifications(userId?: string) {
     },
   });
 
+  const createNotification = useMutation({
+    mutationFn: async (payload: { userId: string; title: string; message?: string; type?: string }) => {
+      await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey }),
+  });
+
   return {
     notifications: query.data ?? [],
     isLoading: query.isLoading,
     markAsRead,
+    createNotification,
   };
 }

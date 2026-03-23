@@ -21,6 +21,8 @@ type Props = {
   squareAutocomplete?: { product_name?: string[]; sku?: string[]; [key: string]: string[] | undefined };
   /** User id for Square Vendors API (vendor autocomplete) */
   userId?: string;
+  /** Whether vendor_code is already present in Square (for status indicator) */
+  vendorCodeInSquare?: boolean;
 };
 
 const FIELDS_TO_RENDER = [
@@ -35,7 +37,7 @@ const FIELDS_TO_RENDER = [
   'image',
 ] as const;
 
-export default function ProductCard({ item, index, missingFields, onChange, squareCategories = [], categoryLoading = false, productNameOptionsLoading = false, disabled, itemRef, squareItemFields = [], squareAutocomplete, userId }: Props) {
+export default function ProductCard({ item, index, missingFields, onChange, squareCategories = [], categoryLoading = false, productNameOptionsLoading = false, disabled, itemRef, squareItemFields = [], squareAutocomplete, userId, vendorCodeInSquare }: Props) {
   const update = (updates: Partial<ConfirmItem>) => onChange(index, updates);
   const includedInPO = item.includedInPO !== false;
 
@@ -77,6 +79,7 @@ export default function ProductCard({ item, index, missingFields, onChange, squa
             fieldMetadata={fieldMetaMap[fieldKey]}
             squareAutocomplete={squareAutocomplete}
             userId={userId}
+            vendorCodeInSquare={fieldKey === 'vendor_code' ? vendorCodeInSquare : undefined}
           />
         ))}
       </div>

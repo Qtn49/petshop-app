@@ -2,12 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Important Rules
+
+- **Never start the dev server** (`npm run dev`, `preview_start`, or any equivalent). The user manages the server themselves.
+
 ## Commands
 
 ```bash
 # Development
 npm run dev          # Start dev server on 0.0.0.0
 npm run build        # Production build
+npm run build:clean  # Clean build (removes .next + node_modules/.cache before building)
 npm run lint         # ESLint
 npm test             # Run tests with Vitest
 

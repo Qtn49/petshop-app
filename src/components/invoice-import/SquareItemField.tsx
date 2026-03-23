@@ -56,6 +56,8 @@ type Props = {
   squareAutocomplete?: { product_name?: string[]; sku?: string[]; [key: string]: string[] | undefined };
   /** User id for Square Vendors API (vendor autocomplete) */
   userId?: string;
+  /** When true, indicates this vendor_code already exists in Square catalog */
+  vendorCodeInSquare?: boolean;
 };
 
 export default function SquareItemField({
@@ -72,6 +74,7 @@ export default function SquareItemField({
   fieldMetadata,
   squareAutocomplete,
   userId,
+  vendorCodeInSquare,
 }: Props) {
   const label = fieldMetadata?.name ?? labelForKey(field);
   /** Loading state for vendor-by-SKU lookup (only used when field === 'sku'). */
@@ -279,6 +282,7 @@ export default function SquareItemField({
   }
 
   if (field === 'vendor_code') {
+    const code = (item.vendor_code ?? '').trim();
     return (
       <MissingFieldHighlight missing={!!missing}>
         <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
@@ -291,7 +295,13 @@ export default function SquareItemField({
           autoComplete="off"
           className={`w-full px-3 py-2 rounded-lg border border-slate-200 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none ${missing ? 'ring-1 ring-amber-400' : ''}`}
         />
-        {item.vendorAutofilledFromCatalog && (item.vendor_code ?? '').trim() && (
+        {code && vendorCodeInSquare === true && (
+          <p className="mt-1 text-xs text-green-600 flex items-center gap-1">✓ Already in Square</p>
+        )}
+        {code && vendorCodeInSquare === false && (
+          <p className="mt-1 text-xs text-amber-600 flex items-center gap-1">Will be added to Square</p>
+        )}
+        {(!code || vendorCodeInSquare == null) && item.vendorAutofilledFromCatalog && code && (
           <p className="mt-1 text-xs text-slate-500">Auto-filled from catalog</p>
         )}
       </MissingFieldHighlight>

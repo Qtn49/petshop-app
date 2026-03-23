@@ -5,7 +5,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import InlineLoader from '@/components/ui/InlineLoader';
-import { Link2, Check, Plus, Trash2, Info, UserPlus } from 'lucide-react';
+import { Link2, Check, Plus, Trash2, Info, UserPlus, Mail, MessageSquare, Phone } from 'lucide-react';
+import ToggleSwitch from '@/components/ui/ToggleSwitch';
 import { getPsychologicalPricingEnabled, setPsychologicalPricingEnabled } from '@/lib/pricing/psychologicalPricing';
 import { clearOrganizationConnection } from '@/lib/organization-connection';
 import { setReturnPathAfterSquareConnect, getAndClearReturnPathAfterSquare, setReturnPathAfterOrgReconnect } from '@/lib/sessionReturnPath';
@@ -27,6 +28,15 @@ type Organization = {
 };
 
 type SquareItemField = { id: string; name: string; optionValues?: { id: string; name: string }[] };
+
+type CommunicationChannel = 'gmail' | 'outlook' | 'slack' | 'whatsapp' | 'sms';
+type CommunicationSettings = Record<CommunicationChannel, { enabled: boolean; url: string }>;
+
+type RestockSettings = {
+  min_stock_threshold: number;
+  auto_check_on_login: boolean;
+  category_thresholds: Record<string, number>;
+};
 
 type UserItem = { id: string; name: string | null; role: string };
 
@@ -87,7 +97,24 @@ export default function SettingsPage() {
   const [disconnectConfirmText, setDisconnectConfirmText] = useState('');
   const [showDeviceSignOutModal, setShowDeviceSignOutModal] = useState(false);
 
-  type SettingsSection = 'profile' | 'organization' | 'square' | 'notifications' | 'sku' | 'billing';
+  const [commSettings, setCommSettings] = useState<CommunicationSettings>({
+    gmail: { enabled: false, url: '' },
+    outlook: { enabled: false, url: '' },
+    slack: { enabled: false, url: '' },
+    whatsapp: { enabled: false, url: '' },
+    sms: { enabled: false, url: '' },
+  });
+  const [commSaving, setCommSaving] = useState(false);
+
+  const [restockSettings, setRestockSettings] = useState<RestockSettings>({
+    min_stock_threshold: 5,
+    auto_check_on_login: false,
+    category_thresholds: {},
+  });
+  const [restockSaving, setRestockSaving] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
+  type SettingsSection = 'profile' | 'organization' | 'square' | 'notifications' | 'sku' | 'billing' | 'communications' | 'purchase-order';
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('profile');
 
   const navItems: { id: SettingsSection; label: string }[] = [
@@ -95,7 +122,9 @@ export default function SettingsPage() {
     { id: 'organization', label: 'Organization' },
     { id: 'square', label: 'Square' },
     { id: 'notifications', label: 'Notifications' },
-    { id: 'sku', label: 'SKU Mapping' },
+    { id: 'sku', label: 'Inventory' },
+    { id: 'purchase-order', label: 'Purchase Order' },
+    { id: 'communications', label: 'Communications' },
     { id: 'billing', label: 'Billing' },
   ];
 
@@ -217,6 +246,22 @@ export default function SettingsPage() {
         setPhone(data.phone ?? '');
         setCurrency(data.currency ?? 'AUD');
         setAiPriceSuggestions(data.ai_price_suggestions ?? false);
+        if (data.communication_settings) {
+          setCommSettings({
+            gmail: data.communication_settings.gmail ?? { enabled: false, url: '' },
+            outlook: data.communication_settings.outlook ?? { enabled: false, url: '' },
+            slack: data.communication_settings.slack ?? { enabled: false, url: '' },
+            whatsapp: data.communication_settings.whatsapp ?? { enabled: false, url: '' },
+            sms: data.communication_settings.sms ?? { enabled: false, url: '' },
+          });
+        }
+        if (data.restock_settings) {
+          setRestockSettings({
+            min_stock_threshold: data.restock_settings.min_stock_threshold ?? 5,
+            auto_check_on_login: data.restock_settings.auto_check_on_login ?? false,
+            category_thresholds: data.restock_settings.category_thresholds ?? {},
+          });
+        }
       }
     } catch {
       // ignore
@@ -293,6 +338,52 @@ export default function SettingsPage() {
       setAiPriceSuggestions(!value);
     } finally {
       setAiPriceSaving(false);
+    }
+  };
+
+  const saveCommSettings = async () => {
+    if (!user?.id) return;
+    setCommSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/settings/organization', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, communication_settings: commSettings }),
+      });
+      if (res.ok) {
+        setMessage({ type: 'success', text: 'Communication settings saved.' });
+      } else {
+        const data = await res.json();
+        setMessage({ type: 'error', text: data.error ?? 'Failed to save' });
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to save' });
+    } finally {
+      setCommSaving(false);
+    }
+  };
+
+  const saveRestockSettings = async () => {
+    if (!user?.id) return;
+    setRestockSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/settings/organization', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, restock_settings: restockSettings }),
+      });
+      if (res.ok) {
+        setMessage({ type: 'success', text: 'Purchase order settings saved.' });
+      } else {
+        const data = await res.json();
+        setMessage({ type: 'error', text: data.error ?? 'Failed to save' });
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to save' });
+    } finally {
+      setRestockSaving(false);
     }
   };
 
@@ -709,43 +800,6 @@ export default function SettingsPage() {
             )}
           </Card>
 
-          <Card title="AI">
-            <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50/50 p-3">
-              <div className="flex items-start gap-2">
-                <div>
-                  <p className="text-sm font-medium text-slate-800">AI price suggestions for new items</p>
-                  <p className="text-xs text-slate-600 mt-0.5">
-                    Claude suggests retail prices for products not in Square yet, based on current Australian market prices. Default: off.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-4 shrink-0">
-                <label className="inline-flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="aiPriceSuggestions"
-                    checked={!aiPriceSuggestions}
-                    disabled={aiPriceSaving}
-                    onChange={() => toggleAiPriceSuggestions(false)}
-                    className="w-4 h-4 border-slate-300 text-primary-600 focus:ring-primary-500"
-                  />
-                  <span className="text-sm text-slate-700">Off</span>
-                </label>
-                <label className="inline-flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="aiPriceSuggestions"
-                    checked={aiPriceSuggestions}
-                    disabled={aiPriceSaving}
-                    onChange={() => toggleAiPriceSuggestions(true)}
-                    className="w-4 h-4 border-slate-300 text-primary-600 focus:ring-primary-500"
-                  />
-                  <span className="text-sm text-slate-700">On</span>
-                </label>
-              </div>
-            </div>
-          </Card>
-
           <Card title="Disconnect organization" className="border-red-200 bg-red-50/30">
             <p className="text-sm text-slate-600 mb-4">
               Disconnect this application from the current organization. You will need to create or connect to an
@@ -847,7 +901,7 @@ export default function SettingsPage() {
       )}
 
       {settingsSection === 'sku' && (
-      <Card title="Invoices" className="border-t border-slate-100">
+      <Card title="Inventory" className="border-t border-slate-100">
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50/50 p-3">
             <div className="flex items-start gap-2">
@@ -866,34 +920,13 @@ export default function SettingsPage() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-4">
-              <label className="inline-flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="roundPrice"
-                  checked={!psychologicalPricing}
-                  onChange={() => {
-                    setPsychologicalPricing(false);
-                    setPsychologicalPricingEnabled(false);
-                  }}
-                  className="w-4 h-4 border-slate-300 text-primary-600 focus:ring-primary-500"
-                />
-                <span className="text-sm text-slate-700">Off</span>
-              </label>
-              <label className="inline-flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="roundPrice"
-                  checked={psychologicalPricing}
-                  onChange={() => {
-                    setPsychologicalPricing(true);
-                    setPsychologicalPricingEnabled(true);
-                  }}
-                  className="w-4 h-4 border-slate-300 text-primary-600 focus:ring-primary-500"
-                />
-                <span className="text-sm text-slate-700">On</span>
-              </label>
-            </div>
+            <ToggleSwitch
+              checked={psychologicalPricing}
+              onChange={(val) => {
+                setPsychologicalPricing(val);
+                setPsychologicalPricingEnabled(val);
+              }}
+            />
           </div>
           <p className="text-sm text-slate-600">
             Calculated price formulas: label and formula in % only (e.g. <code className="bg-slate-100 px-1 rounded text-xs">100,10</code> = 100% then 10%).
@@ -968,6 +1001,28 @@ export default function SettingsPage() {
             </>
           )}
         </div>
+
+        <div className="mt-6 pt-6 border-t border-slate-100">
+          <h3 className="text-sm font-semibold text-slate-700 mb-3">AI Price Suggestions</h3>
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+            <div>
+              <p className="text-sm font-medium text-slate-800">Enable AI price suggestions for new items</p>
+              <p className="text-xs text-slate-600 mt-0.5">
+                When enabled, Claude suggests retail prices for new products based on Australian pet retail market pricing.
+              </p>
+              {aiPriceSuggestions && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Suggested prices are generated by Claude based on Australian pet retail market pricing. Model: claude-sonnet-4-20250514.
+                </p>
+              )}
+            </div>
+            <ToggleSwitch
+              checked={aiPriceSuggestions}
+              onChange={toggleAiPriceSuggestions}
+              disabled={aiPriceSaving}
+            />
+          </div>
+        </div>
       </Card>
       )}
 
@@ -1041,6 +1096,193 @@ export default function SettingsPage() {
       {settingsSection === 'billing' && (
         <Card title="Billing">
           <p className="text-sm text-stone-600">Subscription and billing management coming soon.</p>
+        </Card>
+      )}
+
+      {settingsSection === 'communications' && (
+        <Card title="Communications">
+          <p className="text-sm text-slate-500 mb-6">
+            Connect communication tools to streamline supplier and customer interactions. Add a link to each service you use.
+          </p>
+          <div className="space-y-4">
+            {(
+              [
+                { key: 'gmail' as CommunicationChannel, label: 'Gmail', icon: <Mail className="w-5 h-5 text-red-500" />, placeholder: 'https://mail.google.com/...' },
+                { key: 'outlook' as CommunicationChannel, label: 'Outlook', icon: <Mail className="w-5 h-5 text-blue-600" />, placeholder: 'https://outlook.live.com/...' },
+                { key: 'slack' as CommunicationChannel, label: 'Slack', icon: <MessageSquare className="w-5 h-5 text-purple-500" />, placeholder: 'https://app.slack.com/...' },
+                { key: 'whatsapp' as CommunicationChannel, label: 'WhatsApp', icon: <Phone className="w-5 h-5 text-green-500" />, placeholder: 'https://web.whatsapp.com/...' },
+                { key: 'sms' as CommunicationChannel, label: 'SMS', icon: <MessageSquare className="w-5 h-5 text-slate-500" />, placeholder: 'Your SMS service link...' },
+              ] as const
+            ).map(({ key, label, icon, placeholder }) => (
+              <div key={key} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {icon}
+                    <span className="text-sm font-medium text-slate-800">{label}</span>
+                  </div>
+                  <ToggleSwitch
+                    checked={commSettings[key].enabled}
+                    onChange={(val) =>
+                      setCommSettings((prev) => ({
+                        ...prev,
+                        [key]: { ...prev[key], enabled: val },
+                      }))
+                    }
+                  />
+                </div>
+                {commSettings[key].enabled && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Link / URL</label>
+                    <input
+                      type="url"
+                      value={commSettings[key].url}
+                      onChange={(e) =>
+                        setCommSettings((prev) => ({
+                          ...prev,
+                          [key]: { ...prev[key], url: e.target.value },
+                        }))
+                      }
+                      placeholder={placeholder}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none bg-white"
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="mt-6">
+            <Button onClick={saveCommSettings} disabled={commSaving}>
+              {commSaving ? <InlineLoader size={24} /> : null}
+              Save
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {settingsSection === 'purchase-order' && (
+        <Card title="Purchase Order">
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-700 mb-1">Stock Suggestions</h3>
+              <p className="text-xs text-slate-500 mb-4">
+                Automatically check your Square inventory on login and get notified when items fall below the minimum threshold.
+              </p>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">Auto-check stock on login</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Show a restock alert popup each time you open the app if items are below threshold.
+                    </p>
+                  </div>
+                  <ToggleSwitch
+                    checked={restockSettings.auto_check_on_login}
+                    onChange={(val) =>
+                      setRestockSettings((prev) => ({ ...prev, auto_check_on_login: val }))
+                    }
+                  />
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
+                  <p className="text-sm font-medium text-slate-800">Global minimum stock threshold</p>
+                  <p className="text-xs text-slate-500">Items with stock below this quantity will be flagged for restock.</p>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      min={1}
+                      max={999}
+                      value={restockSettings.min_stock_threshold}
+                      onChange={(e) =>
+                        setRestockSettings((prev) => ({
+                          ...prev,
+                          min_stock_threshold: Math.max(1, parseInt(e.target.value) || 1),
+                        }))
+                      }
+                      className="w-24 px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none bg-white"
+                    />
+                    <span className="text-sm text-slate-500">units</span>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
+                  <p className="text-sm font-medium text-slate-800">Per-category thresholds</p>
+                  <p className="text-xs text-slate-500">Override the global threshold for specific categories.</p>
+                  {Object.entries(restockSettings.category_thresholds).length > 0 && (
+                    <div className="space-y-2">
+                      {Object.entries(restockSettings.category_thresholds).map(([cat, qty]) => (
+                        <div key={cat} className="flex items-center gap-3">
+                          <span className="flex-1 text-sm text-slate-700 truncate">{cat}</span>
+                          <input
+                            type="number"
+                            min={1}
+                            value={qty}
+                            onChange={(e) =>
+                              setRestockSettings((prev) => ({
+                                ...prev,
+                                category_thresholds: {
+                                  ...prev.category_thresholds,
+                                  [cat]: Math.max(1, parseInt(e.target.value) || 1),
+                                },
+                              }))
+                            }
+                            className="w-20 px-2 py-1.5 rounded-lg border border-slate-200 text-sm focus:border-primary-500 outline-none bg-white"
+                          />
+                          <span className="text-xs text-slate-500 w-8">units</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setRestockSettings((prev) => {
+                                const next = { ...prev.category_thresholds };
+                                delete next[cat];
+                                return { ...prev, category_thresholds: next };
+                              })
+                            }
+                            className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Category name"
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      className="flex-1 px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-200 outline-none bg-white"
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={!newCategoryName.trim()}
+                      onClick={() => {
+                        if (!newCategoryName.trim()) return;
+                        setRestockSettings((prev) => ({
+                          ...prev,
+                          category_thresholds: {
+                            ...prev.category_thresholds,
+                            [newCategoryName.trim()]: prev.min_stock_threshold,
+                          },
+                        }));
+                        setNewCategoryName('');
+                      }}
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <Button onClick={saveRestockSettings} disabled={restockSaving}>
+              {restockSaving ? <InlineLoader size={24} /> : null}
+              Save
+            </Button>
+          </div>
         </Card>
       )}
 

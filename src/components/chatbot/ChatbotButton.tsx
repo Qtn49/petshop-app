@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { MAX_PHRASES } from '@/data/maxPhrases';
 import { useAuth } from '@/contexts/AuthContext';
 import ReactMarkdown from 'react-markdown';
 import {
@@ -40,18 +41,15 @@ const SUGGESTIONS = [
   },
 ];
 
-function TypingDots() {
-  return (
-    <span className="inline-flex gap-1">
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="w-2 h-2 rounded-full bg-slate-500 animate-bounce"
-          style={{ animationDelay: `${i * 0.15}s`, animationDuration: '0.6s' }}
-        />
-      ))}
-    </span>
-  );
+function MaxLoadingPhrase() {
+  const [phrase, setPhrase] = useState(() => MAX_PHRASES[Math.floor(Math.random() * MAX_PHRASES.length)]);
+  useEffect(() => {
+    const id = setInterval(() => {
+      setPhrase(MAX_PHRASES[Math.floor(Math.random() * MAX_PHRASES.length)]);
+    }, 5000);
+    return () => clearInterval(id);
+  }, []);
+  return <p className="text-sm italic text-slate-500">{phrase}</p>;
 }
 
 function parseSseLine(
@@ -609,7 +607,7 @@ export default function ChatbotButton() {
                   <span className="mr-2 w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center shrink-0 text-lg">
                     🐾
                   </span>
-                  <div className="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2 bg-slate-200 text-slate-800">
+                  <div className="flex-1 rounded-2xl rounded-bl-md px-4 py-2 bg-slate-200 text-slate-800">
                     <div className="prose prose-sm max-w-none prose-stone prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
                       <ReactMarkdown>{streamingContent}</ReactMarkdown>
                     </div>
@@ -621,8 +619,8 @@ export default function ChatbotButton() {
                   <span className="mr-2 w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center shrink-0 text-lg">
                     🐾
                   </span>
-                  <div className="rounded-2xl rounded-bl-md px-4 py-2 bg-slate-200">
-                    <TypingDots />
+                  <div className="flex-1 rounded-2xl rounded-bl-md px-4 py-3 bg-slate-200">
+                    <MaxLoadingPhrase />
                   </div>
                 </div>
               )}

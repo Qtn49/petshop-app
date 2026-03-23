@@ -11,6 +11,8 @@ type Body = {
   currency?: string;
   invoice_new_item_fields?: string[];
   ai_price_suggestions?: boolean;
+  communication_settings?: Record<string, { enabled: boolean; url: string }>;
+  restock_settings?: { min_stock_threshold: number; auto_check_on_login: boolean; category_thresholds: Record<string, number> };
 };
 
 /** GET: Return the current user's organization (for settings). */
@@ -26,7 +28,7 @@ export async function GET(request: Request) {
 
     const { data, error } = await supabase
       .from('organization')
-      .select('id, company_name, address, email, phone, currency, invoice_new_item_fields, ai_price_suggestions')
+      .select('id, company_name, address, email, phone, currency, invoice_new_item_fields, ai_price_suggestions, communication_settings, restock_settings')
       .eq('id', user.organization_id)
       .single();
 
@@ -64,6 +66,12 @@ export async function PATCH(request: Request) {
     }
     if (body.ai_price_suggestions !== undefined) {
       updates.ai_price_suggestions = Boolean(body.ai_price_suggestions);
+    }
+    if (body.communication_settings !== undefined) {
+      updates.communication_settings = body.communication_settings;
+    }
+    if (body.restock_settings !== undefined) {
+      updates.restock_settings = body.restock_settings;
     }
 
     const { data, error } = await supabase

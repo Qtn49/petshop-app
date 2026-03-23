@@ -7,9 +7,42 @@ import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import { ListSkeleton } from '@/components/ui/Skeleton';
 import InlineLoader from '@/components/ui/InlineLoader';
-import { FileText, Trash2 } from 'lucide-react';
+import { FileText, Trash2, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
 import { useInvoices } from '@/hooks/use-invoices';
 import { useTenantHref } from '@/hooks/useTenantHref';
+
+function StatusBadge({ status }: { status: string }) {
+  if (status === 'completed') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full shrink-0">
+        <CheckCircle2 className="w-3 h-3" />
+        Completed
+      </span>
+    );
+  }
+  if (status === 'parsed') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full shrink-0">
+        <FileText className="w-3 h-3" />
+        Ready
+      </span>
+    );
+  }
+  if (status === 'error') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full shrink-0">
+        <AlertCircle className="w-3 h-3" />
+        Error
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full shrink-0">
+      <Clock className="w-3 h-3" />
+      {status}
+    </span>
+  );
+}
 
 export default function InvoicesListPage() {
   const tenantHref = useTenantHref();
@@ -42,12 +75,12 @@ export default function InvoicesListPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-bold text-slate-800">Invoices</h1>
-        <p className="text-slate-500 mt-1">All uploaded invoices</p>
+        <h1 className="text-2xl font-bold text-slate-800">Inventory</h1>
+        <p className="text-slate-500 mt-1">All uploaded files</p>
       </header>
 
       <div className="flex gap-4">
-        <Link href={tenantHref('/invoices')} className="text-primary-600 hover:underline">
+        <Link href={tenantHref('/inventory')} className="text-primary-600 hover:underline">
           &larr; Upload new invoice
         </Link>
       </div>
@@ -56,7 +89,7 @@ export default function InvoicesListPage() {
         <div className="p-3 rounded-lg bg-red-50 text-red-800 text-sm">{error}</div>
       )}
 
-      <Card title="Invoice List">
+      <Card title="Inventory List">
         {isLoading ? (
           <ListSkeleton rows={5} />
         ) : invoices.length === 0 ? (
@@ -65,10 +98,10 @@ export default function InvoicesListPage() {
           <ul className="space-y-2">
             {invoices.map((inv) => (
               <li key={inv.id} className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 group">
-                <Link href={tenantHref(`/invoices/${inv.id}`)} className="flex items-center gap-3 flex-1 min-w-0">
+                <Link href={tenantHref(`/inventory/${inv.id}`)} className="flex items-center gap-3 flex-1 min-w-0">
                   <FileText className="w-5 h-5 text-slate-400 shrink-0" />
                   <span className="font-medium truncate">{inv.file_name}</span>
-                  <span className="text-sm text-slate-500 shrink-0">{inv.status}</span>
+                  <StatusBadge status={inv.status} />
                 </Link>
                 <Button
                   variant="ghost"

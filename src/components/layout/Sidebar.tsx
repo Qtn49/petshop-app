@@ -27,7 +27,7 @@ const navPaths = [
   { path: '/calendar', label: 'Calendar', icon: CalendarDays },
   { path: '/tasks', label: 'To-Do List', icon: CheckSquare },
   { path: '/suppliers', label: 'Saved Links', icon: Link2 },
-  { path: '/invoices', label: 'Invoices', icon: FileText },
+  { path: '/inventory', label: 'Inventory', icon: FileText },
   { path: '/aquariums', label: 'Aquariums', icon: Fish },
   { path: '/animals', label: 'Animals', icon: Heart },
   { path: '/communications', label: 'Communications', icon: MessageSquare },

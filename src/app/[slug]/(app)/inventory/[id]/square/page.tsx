@@ -11,7 +11,7 @@ export default function InvoiceSquareRedirect() {
   const invoiceId = params.id as string;
 
   useEffect(() => {
-    router.replace(tenantHref(`/invoices/${invoiceId}`));
+    router.replace(tenantHref(`/inventory/${invoiceId}`));
   }, [invoiceId, router, tenantHref]);
 
   return null;

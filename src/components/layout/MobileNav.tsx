@@ -20,7 +20,7 @@ const navPaths = [
   { path: '/calendar', label: 'Calendar', icon: CalendarDays },
   { path: '/tasks', label: 'To-Do', icon: CheckSquare },
   { path: '/suppliers', label: 'Links', icon: Link2 },
-  { path: '/invoices', label: 'Invoices', icon: FileText },
+  { path: '/inventory', label: 'Inventory', icon: FileText },
   { path: '/aquariums', label: 'Aquariums', icon: Fish },
   { path: '/animals', label: 'Animals', icon: Heart },
   { path: '/communications', label: 'Comms', icon: MessageSquare },

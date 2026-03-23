@@ -9,6 +9,7 @@ import DashboardCalendar from '@/components/dashboard/DashboardCalendar';
 import TodoList from '@/components/dashboard/TodoList';
 import SupplierLinks from '@/components/dashboard/SupplierLinks';
 import DashboardHero from '@/components/dashboard/DashboardHero';
+import RestockSuggestionsPopup from '@/components/dashboard/RestockSuggestionsPopup';
 import WidgetCard from '@/components/dashboard/WidgetCard';
 import { WidgetSkeleton } from '@/components/ui/Skeleton';
 import {
@@ -50,7 +51,7 @@ const RecentInvoices = memo(function RecentInvoices({
       <div className="flex items-center justify-between mb-2">
         <h2 className="font-semibold text-stone-800 text-sm">Recent Invoices</h2>
         <Link
-          href={tenantHref('/invoices/list')}
+          href={tenantHref('/inventory/list')}
           className="text-primary-600 hover:text-primary-700 text-sm font-medium flex items-center gap-1"
         >
           View all
@@ -64,7 +65,7 @@ const RecentInvoices = memo(function RecentInvoices({
           {invoices.slice(0, 8).map((inv) => (
             <li key={inv.id}>
               <Link
-                href={tenantHref(`/invoices/${inv.id}`)}
+                href={tenantHref(`/inventory/${inv.id}`)}
                 className="flex items-center gap-2 p-2 rounded-xl hover:bg-amber-50/80 transition group border border-transparent hover:border-amber-100 hover:shadow-sm"
               >
                 <FileText className="w-4 h-4 text-amber-600/70 shrink-0" />
@@ -166,6 +167,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-4 overflow-hidden pb-2 lg:pb-0">
+      <RestockSuggestionsPopup userId={userId ?? undefined} />
       <DashboardHero greeting={greeting} clock={clock} />
 
       <header className="flex-shrink-0">
@@ -179,7 +181,7 @@ export default function DashboardPage() {
       {userId && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-shrink-0">
           <KpiCard
-            href={tenantHref('/invoices/list')}
+            href={tenantHref('/inventory/list')}
             label="Invoices parsed"
             value={parsedInvoicesCount}
             icon={ClipboardCheck}

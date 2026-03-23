@@ -597,6 +597,14 @@ export async function POST(request: Request) {
     const csvFilename = `purchase_order_${invoiceId}_${po.id}.csv`;
     const csvBase64 = Buffer.from(csvContent, 'utf-8').toString('base64');
 
+    // Mark the invoice as completed
+    try {
+      await supabase.from('invoices').update({ status: 'completed' }).eq('id', invoiceId);
+      log('[PO] Invoice marked as completed');
+    } catch (markErr) {
+      console.error('[PO] Failed to mark invoice as completed:', markErr instanceof Error ? markErr.message : markErr);
+    }
+
     log('[PO] === SUCCESS ===');
     return NextResponse.json({
       success: true,

@@ -7,8 +7,10 @@ const TITLE_MODEL = 'claude-haiku-4-5-20251001';
 const MAX_TOOL_CALLS = 5;
 
 const SYSTEM_PROMPT = `You are Max, expert AI assistant for an Australian pet shop.
-You have real-time access to Square POS data via tools.
+You have real-time access to Square POS data via tools AND can take actions in the app.
 Use tools proactively — never ask the user to provide data you can fetch.
+You can: read catalog, check sales & inventory, CREATE catalog items, UPDATE prices, GENERATE purchase order summaries, and CREATE tasks.
+Always confirm with the user before taking write actions (create/update) unless they explicitly requested it.
 If Square not connected: say so briefly, then give general advice.
 Respond in markdown. Be specific with numbers. Max 3 paragraphs unless detail requested.
 Context: Queensland, Australia. Pet shop with aquariums, dogs, cats, birds, reptile supplies.`;
@@ -54,6 +56,67 @@ const SQUARE_TOOLS: Anthropic.Tool[] = [
       },
     },
   },
+  {
+    name: 'create_catalog_item',
+    description: 'Create a new product item in the Square catalog. Use when the user asks to add or create a product.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        product_name: { type: 'string', description: 'Name of the product to create' },
+        price: { type: 'number', description: 'Retail price in dollars (e.g. 29.99)' },
+        category: { type: 'string', description: 'Product category name' },
+        sku: { type: 'string', description: 'SKU code for the product' },
+      },
+      required: ['product_name'],
+    },
+  },
+  {
+    name: 'generate_purchase_order',
+    description: 'Generate a purchase order summary from a list of items and a vendor. Use when the user wants to create a PO.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        vendor: { type: 'string', description: 'Vendor or supplier name' },
+        items: {
+          type: 'array',
+          description: 'List of items to order',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'Product name' },
+              quantity: { type: 'number', description: 'Quantity to order' },
+              unit_cost: { type: 'number', description: 'Cost per unit in dollars' },
+            },
+          },
+        },
+      },
+      required: ['vendor', 'items'],
+    },
+  },
+  {
+    name: 'update_item_price',
+    description: 'Update the retail price of an existing Square catalog item by name or SKU.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: 'Product name or SKU to find the item' },
+        new_price: { type: 'number', description: 'New retail price in dollars' },
+      },
+      required: ['query', 'new_price'],
+    },
+  },
+  {
+    name: 'create_task',
+    description: 'Create a to-do task for the shop. Use when the user asks to add a task, reminder, or to-do.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        title: { type: 'string', description: 'Task title or description' },
+        priority: { type: 'string', enum: ['low', 'medium', 'high'], description: 'Task priority level' },
+      },
+      required: ['title'],
+    },
+  },
 ];
 
 function sseData(payload: string): Uint8Array {
@@ -63,12 +126,34 @@ function sseData(payload: string): Uint8Array {
 
 const SQUARE_BASE = 'https://connect.squareup.com';
 
+type ToolContext = {
+  userId: string;
+  supabase: ReturnType<typeof getSupabaseClient>;
+  baseUrl: string;
+};
+
 async function executeSquareTool(
   toolName: string,
   toolInput: Record<string, unknown>,
   accessToken: string | null,
-  locationId: string | null
+  locationId: string | null,
+  context?: ToolContext
 ): Promise<string> {
+  // Action tools that don't need Square access
+  if (toolName === 'create_task' && context) {
+    const title = String(toolInput.title ?? '').trim();
+    const priority = String(toolInput.priority ?? 'medium');
+    if (!title) return 'Task title is required.';
+    const { error } = await context.supabase.from('tasks').insert({
+      user_id: context.userId,
+      title,
+      priority,
+      completed: false,
+    });
+    if (error) return `Failed to create task: ${error.message}`;
+    return `✅ Task created: "${title}" (priority: ${priority})`;
+  }
+
   if (!accessToken) return 'Square is not connected.';
 
   const headers: Record<string, string> = {
@@ -262,6 +347,86 @@ async function executeSquareTool(
         return `Inventory levels (${lowStockOnly ? 'low stock only' : 'all items'}):\n${lines.join('\n')}`;
       }
 
+      case 'create_catalog_item': {
+        if (!context) return 'Context not available for this action.';
+        const name = String(toolInput.product_name ?? '').trim();
+        if (!name) return 'Product name is required.';
+        const res = await fetch(`${context.baseUrl}/api/square/catalog/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: context.userId,
+            items: [{
+              product_name: name,
+              price: toolInput.price ?? undefined,
+              category: toolInput.category ?? undefined,
+              sku: toolInput.sku ?? undefined,
+            }],
+          }),
+          signal: abort.signal,
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          const errMsg = data.errors?.[0]?.error ?? data.error ?? 'Failed to create item';
+          return `Failed to create "${name}": ${errMsg}`;
+        }
+        const created = data.created?.[0];
+        return `✅ Item created: **${name}**${created?.id ? ` (ID: ${created.id})` : ''}`;
+      }
+
+      case 'generate_purchase_order': {
+        const vendor = String(toolInput.vendor ?? '').trim();
+        const items = (toolInput.items as Array<{ name: string; quantity: number; unit_cost: number }>) ?? [];
+        if (!vendor || items.length === 0) return 'Vendor and items are required.';
+        const total = items.reduce((sum, it) => sum + (it.quantity ?? 0) * (it.unit_cost ?? 0), 0);
+        const lines = items
+          .map((it) => `| ${it.name ?? 'Unknown'} | ${it.quantity ?? 0} | $${Number(it.unit_cost ?? 0).toFixed(2)} | $${(Number(it.quantity ?? 0) * Number(it.unit_cost ?? 0)).toFixed(2)} |`)
+          .join('\n');
+        return `## Purchase Order Summary\n**Vendor:** ${vendor}\n\n| Item | Qty | Unit Cost | Subtotal |\n|------|-----|-----------|----------|\n${lines}\n\n**Total: $${total.toFixed(2)}**\n\n> To finalize this PO, go to Inventory → Upload Invoice or use the manual item creation flow.`;
+      }
+
+      case 'update_item_price': {
+        const query = String(toolInput.query ?? '').trim();
+        const newPrice = Number(toolInput.new_price);
+        if (!query || isNaN(newPrice) || newPrice < 0) return 'Valid query and new_price are required.';
+
+        // Search for the item
+        const searchRes = await fetch(`${SQUARE_BASE}/v2/catalog/search`, {
+          method: 'POST',
+          headers,
+          signal: abort.signal,
+          body: JSON.stringify({ object_types: ['ITEM'], text_query: { keywords: [query] }, limit: 1 }),
+        });
+        const searchData = await searchRes.json();
+        const item = searchData.objects?.[0];
+        if (!item) return `No product found matching "${query}".`;
+
+        const variation = item.item_data?.variations?.[0];
+        if (!variation) return `Product "${item.item_data?.name}" has no variations to update.`;
+
+        const newPriceCents = Math.round(newPrice * 100);
+        const upsertRes = await fetch(`${SQUARE_BASE}/v2/catalog/object`, {
+          method: 'POST',
+          headers,
+          signal: abort.signal,
+          body: JSON.stringify({
+            idempotency_key: crypto.randomUUID(),
+            object: {
+              ...variation,
+              item_variation_data: {
+                ...variation.item_variation_data,
+                price_money: { amount: newPriceCents, currency: 'AUD' },
+              },
+            },
+          }),
+        });
+        if (!upsertRes.ok) {
+          const errData = await upsertRes.json();
+          return `Failed to update price: ${errData.errors?.[0]?.detail ?? upsertRes.statusText}`;
+        }
+        return `✅ Updated price for **${item.item_data?.name}** to $${newPrice.toFixed(2)}`;
+      }
+
       default:
         return `Unknown tool: ${toolName}`;
     }
@@ -438,14 +603,24 @@ export async function POST(request: Request) {
                 get_recent_sales: '📊 Fetching your sales data...',
                 search_product: '🔎 Searching for that product...',
                 get_inventory_levels: '📦 Checking stock levels...',
+                create_catalog_item: '🛍️ Creating catalog item in Square...',
+                generate_purchase_order: '📋 Generating purchase order...',
+                update_item_price: '💰 Updating item price...',
+                create_task: '✅ Creating task...',
               };
-              sendSSEEvent(`__STATUS__:${statusMessages[block.name] ?? '⏳ Fetching data...'}`);
+              sendSSEEvent(`__STATUS__:${statusMessages[block.name] ?? '⏳ Processing...'}`);
 
+              const toolContext: ToolContext = {
+                userId,
+                supabase,
+                baseUrl: new URL(request.url).origin,
+              };
               const result = await executeSquareTool(
                 block.name,
                 block.input as Record<string, unknown>,
                 accessToken,
-                locationId
+                locationId,
+                toolContext
               );
               sendSSEEvent('__STATUS__:✅ Done');
 

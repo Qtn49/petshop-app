@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
     "build": "next build",
+    "build:clean": "rm -rf .next && rm -rf node_modules/.cache && next build",
     "start": "next start",
     "lint": "next lint",
     "generate-favicon": "tsx scripts/generate-favicon.ts",
