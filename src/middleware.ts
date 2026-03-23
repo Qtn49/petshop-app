@@ -110,12 +110,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isSelectUser) {
-    if (deviceValid) {
-      return NextResponse.next({ request: { headers: requestHeaders } });
-    }
-    const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = '/login';
-    return NextResponse.redirect(loginUrl);
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   if (sessionValid && sessionPayload) {
@@ -124,14 +119,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
-  if (deviceValid) {
-    const sel = request.nextUrl.clone();
-    sel.pathname = `/${slug}/select-user`;
-    return NextResponse.redirect(sel);
-  }
-
   const loginUrl = request.nextUrl.clone();
-  loginUrl.pathname = '/login';
+  loginUrl.pathname = `/${slug}/select-user`;
   return NextResponse.redirect(loginUrl);
 }
 

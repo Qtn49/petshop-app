@@ -1,13 +1,10 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { getSupabaseClient } from '@/lib/supabase-server';
-import { verifyPin, hashPin, validatePinFormat } from '@/lib/auth/pin';
+import { verifyPin, hashPin } from '@/lib/auth/pin';
 import {
   isJwtSecretConfigured,
   signSessionToken,
   setSessionCookie,
-  deviceCookieName,
-  verifyJwtToken,
 } from '@/lib/auth/jwt-session';
 
 function isLegacySha256Hash(h: string): boolean {
@@ -22,7 +19,7 @@ async function legacySha256Hash(pin: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** POST — after device registered: verify user PIN and open working session (8h). */
+/** POST — verify user PIN and open working session (8h). */
 export async function POST(request: Request) {
   try {
     if (!isJwtSecretConfigured()) {
@@ -44,20 +41,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'PIN must be exactly 4 digits' }, { status: 400 });
     }
 
-    const store = cookies();
-    const deviceToken = store.get(deviceCookieName(slug))?.value;
-    if (!deviceToken) {
-      return NextResponse.json({ error: 'Device not registered' }, { status: 401 });
-    }
-
-    const devicePayload = await verifyJwtToken(deviceToken);
-    if (!devicePayload || devicePayload.typ !== 'device' || devicePayload.slug !== slug) {
-      return NextResponse.json({ error: 'Device not registered' }, { status: 401 });
-    }
-
     const supabase = getSupabaseClient();
     const { data: org } = await supabase.from('organization').select('id').eq('slug', slug).maybeSingle();
-    if (!org?.id || org.id !== devicePayload.org) {
+    if (!org?.id) {
       return NextResponse.json({ error: 'Shop not found' }, { status: 404 });
     }
 
